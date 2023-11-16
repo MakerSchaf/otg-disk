@@ -1,0 +1,848 @@
+<HTML>
+<HEAD>
+  <!-- software: muc 1.1.2 -->
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <TITLE>otg-disk Reference</TITLE>
+  <LINK HREF="index.html" REL="home">
+<STYLE TYPE="text/css">
+    A, A:visited { text-decoration: none; color: blue; }
+    A:hover { color: #00FF00; }
+    BODY { padding: 1em; margin: auto; max-width: 700; }
+    BODY, TD, TH { font-size: 11pt; line-height: 1.5;
+        font-family: Verdana, Georgia, Helvetica, Arial, sans-serif;
+        }
+    PRE.code { margin-left: 2em; padding: .5em; background: #F0F0F0; color: #0000FF;
+	 line-height: 1.2;
+        font-size: 90%; overflow-x: auto; overflow-y: auto;
+        font-family: "courier new", monospace;
+        border: 1px solid black; border-radius: 0px; border: 1px solid grey;
+        }
+    CODE { font-family: "courier new", monospace; color: #0000FF;
+        font-size: 90%; padding: .2em .4em;
+        background: #F0F0F0; border-radius: 6px;
+        vertical-align: middle;
+        }
+    TABLE { margin-left: 2em; border-spacing: 0px; }
+    TD, TH { border: 1px dotted gray; padding-left: .5em; padding-right: .5em; }
+    BLOCKQUOTE { margin-left: 2em; border-left: 2px solid blue; padding-left: 1em; }
+    DIV.navigator { padding: 2px; font-size: 80%; background: #F0FFF0; border-bottom: 1px solid blue; }
+    DIV.lastmod { font-size: 80%; }
+    DIV.introduction { font-size: 90%; margin: 0 2em 0 2em; }
+</STYLE>
+<LINK HREF="styles.css" REL="stylesheet" TYPE="text/css">
+<STYLE TYPE="text/css">
+DIV.navigator { background: #F0FFF0; }
+</STYLE>
+<SCRIPT SRC="keyboard.js" TYPE="text/javascript"></SCRIPT>
+</HEAD>
+<BODY>
+<NAV><DIV ALIGN="RIGHT" CLASS="navigator"><A HREF="index.html" REL="Home">Home</A>
+| <A HREF="contents.html" REL="Contents">Contents</A>
+| <A HREF="safety-instructions.html" REL="first">F</A><A HREF="usb-disks.html" REL="prev">P</A>NL</DIV></NAV>
+<DIV ALIGN="RIGHT" CLASS="lastmod">Last modified: 2023-11-16 07:18</DIV>
+<P>This document describes <EM>otg-disk</EM>'s user interface (command line
+ only), the configuration options and command line operations.</P>
+<H1><P>otg-disk Reference</P></H1>
+<H2><P>User Interface</P></H2>
+<P><EM>otg-disk</EM> is controlled and configured with command line options.
+(Configuration is also possible by editing the script, which is
+equivalent to command line options.)  To make things easier <EM>bash</EM>
+completion is supported.  The <CODE>--bc</CODE> option lists the shell code
+needed for it.</P>
+<P>Activate it on-demand by runnning</P>
+<PRE CLASS="code">$ eval "$(./otg-disk --bc)"</PRE>
+<P>or save the output to a file and move it to <EM>/etc/bash_completion.d</EM>.</P>
+<PRE CLASS="code">$ ./otg-disk --bc >bc.otg-disk
+$ sudo mv bc.otg-disk /etc/bash_completion.d</PRE>
+<P>Relogin (or reboot) to activate it.</P>
+<P>Use <CODE>./otg-disk --help</CODE> to get a brief overview about the
+implemented commands.</P>
+<H2><P>Configuration options</P></H2>
+<P><EM>otg-disk</EM> uses shell variables for its configuration, which can be
+changed within the script or with the <STRONG>--configure</STRONG> option.</P>
+<PRE CLASS="code">$ ./otg-disk --show-config [<EM>regex</EM> ...]</PRE>
+<P>lists the current configuration.  If <EM>regex</EM> is present only
+variables names that match one of the regular expressions are listed.</P>
+<H3><P>General options</P></H3>
+<DL>
+<DT><STRONG>LOGDIR</STRONG> = <EM>directory</EM></DT>
+<DD>the directory where <EM>otg-disk</EM> write its logfiles when running as a
+service.  (When running from a console, logfiles are printed there).
+If <CODE>$LOGDIR</CODE> is not set any output goes to the system's logfile.</DD>
+<DT><STRONG>OTG_DEV_ADDR</STRONG> = <EM>mac</EM></DT>
+<DD><EM>otg-disk</EM> can load the OTG g_ether module if the <EM>dwc2</EM> overlay
+is activated in <EM>/boot/config.txt</EM>, the module is not already
+loaded and there is only one USB device (the Raspberry's own USB
+hub) is found and the USB MAC address is set with this option.</DD>
+<DT><STRONG>OTG_FAILSAFE</STRONG> = yes | no</DT>
+<DD>If things turn really bad <EM>otg-disk</EM> can send your Raspberry into a
+boot loop.  (It reboots when the respective file is deleted with no
+further questions asked.)  Setting this options to <CODE>yes</CODE> disables
+the systemd service for future boots.  The <CODE>--enable</CODE> reenables the
+service.</DD>
+<DT><STRONG>OTG_STOP_FILE</STRONG> = yes | no</DT>
+<DD>If <CODE>yes</CODE> then the file <EM>otg-disk.stop</EM> is created in $SYSCTRL
+and deleting the file stops <EM>otg-disk</EM>.</DD>
+<DT><STRONG>SYSCTRL</STRONG> = <EM>directory</EM></DT>
+<DD><EM>otg-disk</EM> provides service control by accessing files in a certain
+directory, which is set with this option and must be inside one of
+the configured samba shares.</DD>
+<DT><STRONG>SERVICE_LIST</STRONG> = <EM>services</EM></DT>
+<DD>define the services for which <EM>otg-disk</EM> provides control files.
+This list must contains those services which cannot be detected by
+<EM>otg-disk</EM>.</DD>
+<DT><STRONG>SYSTEM_SERVICES</STRONG> = <EM>services</EM></DT>
+<DD><EM>otg-disk</EM> tests and stops these system services on startup to
+avoid conflicts.  Stopped services are restarted when <EM>otg-disk</EM>
+terminates.</DD>
+<DT><STRONG>START_SERVICES</STRONG> = <EM>services</EM></DT>
+<DD>These services are automatically started when <EM>otg-disk</EM> starts.</DD>
+<DT><STRONG>USER</STRONG> = <EM>username</EM></DT>
+<DD>this option configures the system user for <EM>otg-disk</EM> when running
+as system service.</DD>
+</DL>
+<H3><P>Samba shares</P></H3>
+<P>The public samba share is a core function of <EM>otg-disk</EM>.  It is
+configured with two options only:</P>
+<DL>
+<DT><STRONG>PUBLIC_SHARE_NAME</STRONG> = <EM>name</EM></DT>
+<DD>the public share name.</DD>
+<DT><STRONG>PUBLIC_SHARE_PATH</STRONG> = <EM>directory</EM></DT>
+<DD>the directory of the public share.</DD>
+<DT><STRONG>PUBLIC_SHARE_OPT</STRONG> = <EM>smb.conf-options</EM></DT>
+<DD>additional configuration options to the public share definition.</DD>
+</DL>
+<P>The share is created if its name and path is configured.  The
+directory is created if it doesn't exist and permissions are changed
+to allow public access to guest users (no login must be provided)
+and operations are done with <CODE>$USER</CODE> permissions.  With</P>
+<PRE CLASS="code">PUBLIC_SHARE_OPT="read only = yes"</PRE>
+<P>the share is not writeable.</P>
+<P>Optionally, <EM>otg-disk</EM> can create a private share from the following
+options:</P>
+<DL>
+<DT><STRONG>PRIVATE_SHARE_NAME</STRONG> = <EM>name</EM></DT>
+<DD>the name of the private samba share.</DD>
+<DT><STRONG>PRIVATE_SHARE_PATH</STRONG> = <EM>directory</EM></DT>
+<DD>the directory of the private samba share.</DD>
+<DT><STRONG>PRIVATE_SHARE_USERNAME</STRONG> = <EM>username</EM></DT>
+<DD>username to access the private samba share, the default is the
+configured username.</DD>
+<DT><STRONG>PRIVATE_SHARE_PASSWORD</STRONG> = <EM>password</EM></DT>
+<DD>password to access the private samba share.</DD>
+<DT><STRONG>PRIVATE_SHARE_OPT</STRONG> = <EM>smb.conf-options</EM></DT>
+<DD>additional configuration options to the private share definition.</DD>
+</DL>
+<P>Name and path must be set to get the share The configured directory is
+created if it does not exist.  The password must be set too to access
+the share.  Additional options are taken from the <CODE>$PRIVATE_SHARE_OPT</CODE>
+variable which must be a list of colon-separated share options.</P>
+<P><EM>otg-disk</EM> can construct more samba shares from the following
+option.</P>
+<DL>
+<DT><STRONG>OTHER_SHARES</STRONG> = <EM>share-definitions</EM></DT>
+<DD>a list of semicolon-separated share definition and each share
+definition is a list of colon-separated share options of the form
+<CODE>option = value</CODE>.  The first two options without a <CODE>=</CODE> define the
+share's name and path.</DD>
+</DL>
+<P>The given options are combined with the defaults</P>
+<PRE CLASS="code">browseable = yes
+guest ok = no
+read only = no
+create mask = 644
+directory mask = 775</PRE>
+<P>to define the share.  The user's <EM>samba</EM> password may follow the
+username in the <CODE>valid users</CODE> option separated with a slash <CODE>/</CODE> from
+the account name.</P>
+<PRE CLASS="code">mp3:$HOME/music: guest ok = yes: read only: yes;
+documents:$HOME/documents: valid users = $USER, docs/9772</PRE>
+<P>creates the public read-only share <EM>mp3</EM> and documents which can be
+accessed by $USER and <EM>docs</EM> with <CODE>9772</CODE> as simple share "password".</P>
+<P>Such user account are not intended to implement a full user management
+you would expect on a regular file server but are meant to be shared
+among the persons which are allowed to access the share to give a
+share-level access control.</P>
+<P>Furthermore, these accounts need an entry in the system's
+<EM>/etc/passwd</EM> too and can be created with the <CODE>--create-share-account</CODE>
+operation.</P>
+<PRE CLASS="code">$ sudo ./otg-disk --create-share-account media /home/pi/media</PRE>
+<P>creates a system account with the given home directory.  No password
+is set and the login shell is <EM>/bin/true</EM>, that is: the account
+cannot be used for system logins.</P>
+<P>If a share definition name starts with an <CODE>@</CODE> <EM>otg-disk</EM> looks up
+the share name in <EM>/etc/passwd</EM> and uses the home directory as share
+path.  For example,</P>
+<PRE CLASS="code">OTHER_SHARES="@media:valid users = media/9772"</PRE>
+<P>creates the share <EM>media</EM> and would set <EM>/home/pi/media</EM> (from the
+example above) as path.</P>
+<P>The samba configuration file is re-created from the definitions
+every time <EM>otg-disk</EM> starts.  Use</P>
+<PRE CLASS="code">$ ./otg-disk --smb.conf</PRE>
+<P>to list the effective configuration plus any user accounts created
+from it.</P>
+<H3><P>DLNA server</P></H3>
+<P>If installed, <EM>otg-disk</EM> starts <EM>minidlnad</EM>.  A prerequisite is
+that the directory to the media files is set.  The directory is
+created if it does not exits.</P>
+<DL>
+<DT><STRONG>MEDIA_PATH</STRONG> = <EM>directory</EM></DT>
+<DD>set the path to media files for a DLNA server.</DD>
+</DL>
+<P>However,<EM>otg-disk</EM> will start the service only if it is not only
+running (as system service).  To stop a running <EM>minidlnad</EM> instance
+when <EM>otg-disk</EM> starts, add <CODE>minidlnad</CODE> to the <CODE>SYSTEM_SERVICES</CODE>
+variable.</P>
+<H3><P>Builtin HTTP server</P></H3>
+<P>The preconfigured HTTP server (<EM>busybox</EM> http module) use these
+configuration options.</P>
+<DL>
+<DT><STRONG>HTTP_DOCUMENT_ROOT</STRONG> = <EM>directory</EM></DT>
+<DD>the server's document root directory.</DD>
+<DT><STRONG>HTTP_PORT</STRONG> = <EM>int</EM></DT>
+<DD>the server's TCP service port.  The server is <EM>not</EM> started as
+<EM>root</EM> and this port must be unprivileged (i.e. &gt;= 1024).</DD>
+</DL>
+<P>Both options must be defined to run the server.</P>
+<H3><P>W-Lan and access points</P></H3>
+<P><EM>otg-disk</EM> can run its own wireless network if <EM>hostapd</EM> and
+<EM>dnsmasq</EM> are installed.  The network is configured by the following
+two sets of options.</P>
+<DL>
+<DT><STRONG>WLAN_COUNTRY_CODE</STRONG> = <EM>code</EM></DT>
+<DD>a valid country code, e.g. <CODE>DE</CODE> for Germany.  With a wrong code
+the access point may not operate (and be illegal).  Use the
+<CODE>country</CODE> value from <CODE>sudo cat
+/etc/wpa_supplicant/wpa_supplicant.conf</CODE></DD>
+<DT><STRONG>WLAN_SSID</STRONG> = <EM>name</EM></DT>
+<DD>the W-Lan network name.</DD>
+<DT><STRONG>WLAN_PASSWD</STRONG> = <EM>password</EM></DT>
+<DD>the W-Lan password.</DD>
+</DL>
+<P>The IP-network must be configured too:</P>
+<DL>
+<DT><STRONG>AP_IFC</STRONG> = <EM>wlan-interface</EM></DT>
+<DD>the W-Lan adapter; <CODE> wlan0</CODE> is usually the right option until
+there are multiple W-Lan adapters.</DD>
+<DT><STRONG>AP_IP_ADDR</STRONG> = <EM>ip</EM></DT>
+<DD>the device's IP address.</DD>
+<DT><STRONG>AP_IP_NETWORK</STRONG> = <EM>network-address</EM></DT>
+<DD>the W-Lan's network address.</DD>
+<DT><STRONG>AP_NETMASK</STRONG> = <EM>netmask</EM></DT>
+<DD>the W-Lan's network mask.</DD>
+<DT><STRONG>AP_DHCP_DEF</STRONG> = <EM>dnsmasq-option</EM></DT>
+<DD>value to <EM>dnsmasq</EM>'s <CODE>-F</CODE> option to run a DHCP server.</DD>
+</DL>
+<P>The parameters above must fit to each other.  <EM>otg-disk</EM> does not
+check for errors.</P>
+<P><EM>otg-disk</EM> requires a working network connection and can be
+configured to start it hotspot if no other network is found.</P>
+<DL>
+<DT><STRONG>AP_AUTOSTART</STRONG> = yes|no</DT>
+<DD>controls if the access point should be started (= <CODE>yes</CODE>) or not.</DD>
+<DT><STRONG>AP_AUTOSTART_DELAY</STRONG> = <EM>num</EM></DT>
+<DD><EM>otg-disk</EM> wait for this amount of seconds before network
+connections are tested to give any network enough time to go
+online.</DD>
+<DT><STRONG>AP_AUTOSTART_HTTP</STRONG> = yes|no</DT>
+<DD>defines if <EM>otg-disk</EM>'s HTTP server should be started with the
+automatic access point.  This supports (outdoor) scenarios when
+operating <EM>otg-disk</EM> from a mobile phone with a web (instead of
+samba) client.</DD>
+</DL>
+<P>The access point is only started if no active network connection is
+found, which includes</P>
+<UL>
+<LI>any W-Lan network,</LI>
+<LI>ethernet, and</LI>
+<LI>OTG USB network.</LI>
+</UL>
+<H3><P>Internal options</P></H3>
+<P>The are some more variables available but they are not meant to be
+changed.</P>
+<DL>
+<DT><STRONG>DIR_PERM</STRONG> = <EM>perm</EM></DT>
+<DD>set the permissions for samba share directories; default is <CODE>775</CODE>.</DD>
+<DT><STRONG>MYPID_FILE</STRONG> = <EM>fn</EM></DT>
+<DD>name of <EM>otg-disk</EM>'s pidfile.</DD>
+<DT><STRONG>RUN</STRONG> = <EM>directory</EM></DT>
+<DD>set the directory for <EM>otg-disk</EM>'s runtime files.  The default is
+<EM>/run/otg-disk</EM>.</DD>
+<DT><STRONG>SMB_CONF</STRONG> = <EM>fn</EM></DT>
+<DD>name of <EM>smbd</EM>'s configuration file.</DD>
+<DT><STRONG>SMB_LOG</STRONG> = <EM>fn</EM></DT>
+<DD>name of <EM>smbd</EM>'s logfile.</DD>
+</DL>
+<H2><P>Operation Commands</P></H2>
+<H3><P>Installation</P></H3>
+<P>The following operations require that superuser permissions are
+already set, e.g. using <EM>sudo</EM>.</P>
+<DL>
+<DT><STRONG>--apt-get</STRONG> <EM>pkg</EM> ... - <EM>service</EM></DT>
+<DD>call <EM>apt-get</EM> to install the listed software packages and
+stop the services.</DD>
+<DT><STRONG>--apt-system-update</STRONG></DT>
+<DD>convenience function: run <EM>apt-get</EM> to update all installed
+packages.</DD>
+<DT><STRONG>--create-share-account</STRONG> <EM>user</EM> <EM>dir</EM></DT>
+<DD>create the system account <EM>user</EM> with home directory <EM>dir</EM> and no
+login shell (set to <EM>/bin/true</EM>) to be used as samba share
+account.</DD>
+<DT><STRONG>--install</STRONG></DT>
+<DD>create a service unit to install <EM>otg-disk</EM> as <EM>systemd</EM>
+service.  The script will start automatically when the system
+boots but not when installed.</DD>
+<DT><STRONG>--install-otg</STRONG></DT>
+<DD>like <CODE>--install</CODE> but the service will start only if on-the-go
+USB network is found on startup.</DD>
+<DT><STRONG>--uninstall</STRONG></DT>
+<DD>stop a running <EM>otg-disk</EM> service and removes the unit file.</DD>
+</DL>
+<H3><P>Configuration</P></H3>
+<DL>
+<DT><STRONG>--configure</STRONG> --<EM>var</EM> <EM>val</EM> ...</DT>
+<DD>Modify the configuration variable(s) <EM>var</EM> in the <EM>otg-disk</EM> script.
+The changes between old and new script is displayed and the user
+is asked for a confirmation of the changes.  The <CODE>--configure</CODE> has
+some variations:
+<UL>
+<LI><CODE>--names</CODE> lists the variable names as options,</LI>
+<LI><CODE>--print <EM>var</EM> ...</CODE> prints values of the given variables (on
+ per line), and</LI>
+<LI><CODE>--help</CODE> displays usage information.</LI>
+</UL></DD>
+<DT><STRONG>--mkdirs</STRONG></DT>
+<DD>Display commands to create missing directories for samba, httpd and
+dlna server.</DD>
+<DT><STRONG>--show-config</STRONG> [<EM>regex</EM> ...]</DT>
+<DD>Print <EM>otg-disk</EM>'s configuration.  If one or more <EM>regex</EM> is
+present than only variables matching any of <EM>regex</EM> (case
+ignored) are shown.</DD>
+<DT><STRONG>--smb.conf</STRONG></DT>
+<DD>Print the computed <EM>smbd</EM> configuration file.</DD>
+<DT><STRONG>--sys-config</STRONG></DT>
+<DD>Display shell commands to adjust the Raspberry configuration for
+<EM>otg-disk</EM>'s basic functionality.</DD>
+</DL>
+<H3><P>Operation</P></H3>
+<P>The operational commands below can be run as normal user and acquire
+superuser privileges (<EM>sudo</EM>) as required.  None of the options
+below (with the exception of disable/enable) change something on
+your system.  Such operations are listed above in the Installation
+section (even if they are not fully related to installing something)
+and require explicit superuser permissions.</P>
+<DL>
+<DT><STRONG>--disable</STRONG></DT>
+<DD>Disable (but don't stop) the <EM>otg-disk</EM> system service.</DD>
+<DT><STRONG>--enable</STRONG></DT>
+<DD>Re-enable the service to start on system boot.</DD>
+<DT><STRONG>--help</STRONG></DT>
+<DD>Show the list of operations.</DD>
+<DT><STRONG>--logfile</STRONG></DT>
+<DD>Print the name of <EM>otg-disk</EM>'s logfile.</DD>
+<DT><STRONG>--mount</STRONG> [<EM>disk</EM> <EM>partition</EM> <EM>uuid</EM>]</DT>
+<DD>List all USB disks that were mounted by <EM>otg-disk</EM>.
+A matching partition will be mounted if the parameters are present
+but this operation is called internally from <EM>otg-disk</EM>'s USB
+monitor and not part of the user interface.</DD>
+<DT><STRONG>--op</STRONG> <EM>service</EM> <EM>operation</EM></DT>
+<DD>Runs <EM>service</EM>'s action for <EM>operation</EM>.  This is an internal
+operation and is not part of the user interface.  Instead the
+corresponding file <CODE>$SYSCTRL/<EM>service</EM>.<EM>operation</EM></CODE> should be
+removed to trigger the action.</DD>
+<DT><STRONG>--ps</STRONG> [<EM>name</EM>]</DT>
+<DD>List <EM>otg-disk</EM>'s processes.  If <EM>name</EM> is present the process ids
+of <EM>otg-disk</EM>'s process <EM>name</EM> is returned.</DD>
+<DT><STRONG>--reopen-log</STRONG></DT>
+<DD>Open a new logfile.</DD>
+<DT><STRONG>--restart</STRONG></DT>
+<DD>Restart the service.</DD>
+<DT><STRONG>--scan-files</STRONG></DT>
+<DD>List extension files found in <EM>otg-disk</EM>'s directory.</DD>
+<DT><STRONG>--start</STRONG></DT>
+<DD>Start <EM>otg-disk</EM>.</DD>
+<DT><STRONG>--status</STRONG></DT>
+<DD>Check if <EM>otg-disk</EM>'s is running.</DD>
+<DT><STRONG>--stop</STRONG></DT>
+<DD>Stop <EM>otg-disk</EM>.</DD>
+<DT><STRONG>--tail</STRONG></DT>
+<DD>Follow <EM>otg-disk</EM>'s logfile.</DD>
+<DT><STRONG>--tcp</STRONG> [<EM>port</EM>]</DT>
+<DD>List processes with TCP service ports.  If <EM>port</EM> is present the
+pid of the service listening on <EM>port</EM> is returned.  <CODE>--tcp</CODE> will
+not list <EM>smbd</EM> (ot other services that are started from
+<EM>otg-disk</EM> with a different user).  Process names are not as well
+computed an in <CODE>--ps</CODE>.</DD>
+<DT><STRONG>--umount</STRONG> <EM>uuid</EM></DT>
+<DD>Unmount the partition <EM>uuid</EM> which must have been mounted by
+<EM>otg-disk</EM>.</DD>
+<DT><STRONG>--version</STRONG></DT>
+<DD>Print <EM>otg-disk</EM>'s version.</DD>
+<DT><STRONG>--wlan</STRONG></DT>
+<DD>Print the W-Lan status.</DD>
+</DL>
+<P>Use <STRONG>--help</STRONG> to get a brief overview about the operations.</P>
+</BODY>
+<!-- source: text/markdown
+
+ This document describes _otg-disk_'s user interface (command line
+ only), the configuration options and command line operations.
+
+
+# otg-disk Reference
+
+## User Interface
+
+_otg-disk_ is controlled and configured with command line options.
+(Configuration is also possible by editing the script, which is
+equivalent to command line options.)  To make things easier _bash_
+completion is supported.  The `--bc` option lists the shell code
+needed for it.
+
+Activate it on-demand by runnning
+
+    $ eval "$(./otg-disk --bc)"
+
+or save the output to a file and move it to _/etc/bash_completion.d_.
+
+    $ ./otg-disk --bc bc.otg-disk
+    $ sudo mv bc.otg-disk /etc/bash_completion.d
+
+Relogin (or reboot) to activate it.
+
+Use `./otg-disk --help` to get a brief overview about the
+implemented commands.
+
+
+## Configuration options
+
+_otg-disk_ uses shell variables for its configuration, which can be
+changed within the script or with the **--configure** option.
+
+``` _
+    $ ./otg-disk --show-config \[_regex_ ...\]
+```
+
+lists the current configuration.  If _regex_ is present only
+variables names that match one of the regular expressions are listed.
+
+
+### General options
+
+ : **LOGDIR** = _directory_
+  the directory where _otg-disk_ write its logfiles when running as a
+  service.  (When running from a console, logfiles are printed there).
+  If `$LOGDIR` is not set any output goes to the system's logfile.
+
+ : **OTG_DEV_ADDR** = _mac_
+  _otg-disk_ can load the OTG g_ether module if the _dwc2_ overlay
+  is activated in _/boot/config.txt_, the module is not already
+  loaded and there is only one USB device (the Raspberry's own USB
+  hub) is found and the USB MAC address is set with this option.
+
+ : **OTG_FAILSAFE** = yes | no
+  If things turn really bad _otg-disk_ can send your Raspberry into a
+  boot loop.  (It reboots when the respective file is deleted with no
+  further questions asked.)  Setting this options to `yes` disables
+  the systemd service for future boots.  The `--enable` reenables the
+  service.
+
+ : **OTG_STOP_FILE** = yes | no
+  If `yes` then the file _otg-disk.stop_ is created in $SYSCTRL
+  and deleting the file stops _otg-disk_.
+
+ : **SYSCTRL** = _directory_
+  _otg-disk_ provides service control by accessing files in a certain
+  directory, which is set with this option and must be inside one of
+  the configured samba shares.
+
+ : **SERVICE_LIST** = _services_
+  define the services for which _otg-disk_ provides control files.
+  This list must contains those services which cannot be detected by
+  _otg-disk_.
+
+ : **SYSTEM_SERVICES** = _services_
+  _otg-disk_ tests and stops these system services on startup to
+  avoid conflicts.  Stopped services are restarted when _otg-disk_
+  terminates.
+  
+ : **START_SERVICES** = _services_
+  These services are automatically started when _otg-disk_ starts.
+
+ : **USER** = _username_
+  this option configures the system user for _otg-disk_ when running
+  as system service.
+
+
+### Samba shares
+
+The public samba share is a core function of _otg-disk_.  It is
+configured with two options only:
+
+ : **PUBLIC_SHARE_NAME** = _name_
+  the public share name.
+
+ : **PUBLIC_SHARE_PATH** = _directory_
+  the directory of the public share.
+
+ : **PUBLIC_SHARE_OPT** = _smb.conf-options_
+  additional configuration options to the public share definition.
+
+The share is created if its name and path is configured.  The
+directory is created if it doesn't exist and permissions are changed
+to allow public access to guest users (no login must be provided)
+and operations are done with `$USER` permissions.  With
+
+    PUBLIC_SHARE_OPT="read only = yes"
+
+the share is not writeable.
+
+
+Optionally, _otg-disk_ can create a private share from the following
+options:
+
+ : **PRIVATE_SHARE_NAME** = _name_
+  the name of the private samba share.
+
+ : **PRIVATE_SHARE_PATH** = _directory_
+  the directory of the private samba share.
+
+ : **PRIVATE_SHARE_USERNAME** = _username_
+  username to access the private samba share, the default is the
+  configured username.
+
+ : **PRIVATE_SHARE_PASSWORD** = _password_
+  password to access the private samba share.
+
+ : **PRIVATE_SHARE_OPT** = _smb.conf-options_
+  additional configuration options to the private share definition.
+
+Name and path must be set to get the share The configured directory is
+created if it does not exist.  The password must be set too to access
+the share.  Additional options are taken from the `$PRIVATE_SHARE_OPT`
+variable which must be a list of colon-separated share options.
+
+
+_otg-disk_ can construct more samba shares from the following
+option.
+
+ : **OTHER_SHARES** = _share-definitions_
+  a list of semicolon-separated share definition and each share
+  definition is a list of colon-separated share options of the form
+  `option = value`.  The first two options without a `=` define the
+  share's name and path.
+
+The given options are combined with the defaults
+
+    browseable = yes
+    guest ok = no
+    read only = no
+    create mask = 644
+    directory mask = 775
+
+to define the share.  The user's _samba_ password may follow the
+username in the `valid users` option separated with a slash `/` from
+the account name.
+
+    mp3:$HOME/music: guest ok = yes: read only: yes;
+    documents:$HOME/documents: valid users = $USER, docs/9772
+
+creates the public read-only share _mp3_ and documents which can be
+accessed by $USER and _docs_ with `9772` as simple share "password".
+
+Such user account are not intended to implement a full user management
+you would expect on a regular file server but are meant to be shared
+among the persons which are allowed to access the share to give a
+share-level access control.
+
+Furthermore, these accounts need an entry in the system's
+_/etc/passwd_ too and can be created with the `--create-share-account`
+operation.
+
+    $ sudo ./otg-disk --create-share-account media /home/pi/media
+
+creates a system account with the given home directory.  No password
+is set and the login shell is _/bin/true_, that is: the account
+cannot be used for system logins.
+
+If a share definition name starts with an `@` _otg-disk_ looks up
+the share name in _/etc/passwd_ and uses the home directory as share
+path.  For example,
+
+    OTHER_SHARES="@media:valid users = media/9772"
+
+creates the share _media_ and would set _/home/pi/media_ (from the
+example above) as path.
+
+
+The samba configuration file is re-created from the definitions
+every time _otg-disk_ starts.  Use
+
+    $ ./otg-disk --smb.conf
+
+to list the effective configuration plus any user accounts created
+from it.
+
+
+### DLNA server
+
+If installed, _otg-disk_ starts _minidlnad_.  A prerequisite is
+that the directory to the media files is set.  The directory is
+created if it does not exits.
+
+ : **MEDIA_PATH** = _directory_
+  set the path to media files for a DLNA server.
+
+However,_otg-disk_ will start the service only if it is not only
+running (as system service).  To stop a running _minidlnad_ instance
+when _otg-disk_ starts, add `minidlnad` to the `SYSTEM_SERVICES`
+variable.
+
+
+### Builtin HTTP server
+
+The preconfigured HTTP server (_busybox_ http module) use these
+configuration options.
+
+ : **HTTP_DOCUMENT_ROOT** = _directory_
+  the server's document root directory.
+
+ : **HTTP_PORT** = _int_
+  the server's TCP service port.  The server is _not_ started as
+  _root_ and this port must be unprivileged (i.e. = 1024).
+
+Both options must be defined to run the server.
+
+
+### W-Lan and access points
+
+_otg-disk_ can run its own wireless network if _hostapd_ and
+_dnsmasq_ are installed.  The network is configured by the following
+two sets of options.
+
+ : **WLAN_COUNTRY_CODE** = _code_
+  a valid country code, e.g. `DE` for Germany.  With a wrong code
+  the access point may not operate (and be illegal).  Use the
+  `country` value from `sudo cat
+  /etc/wpa_supplicant/wpa_supplicant.conf`
+
+ : **WLAN_SSID** = _name_
+  the W-Lan network name.
+
+ : **WLAN_PASSWD** = _password_
+  the W-Lan password.
+
+The IP-network must be configured too:
+
+ : **AP_IFC** = _wlan-interface_
+  the W-Lan adapter; ` wlan0` is usually the right option until
+  there are multiple W-Lan adapters.
+
+ : **AP_IP_ADDR** = _ip_
+  the device's IP address.
+
+ : **AP_IP_NETWORK** = _network-address_
+  the W-Lan's network address.
+
+ : **AP_NETMASK** = _netmask_
+  the W-Lan's network mask.
+
+ : **AP_DHCP_DEF** = _dnsmasq-option_
+  value to _dnsmasq_'s `-F` option to run a DHCP server.
+
+The parameters above must fit to each other.  _otg-disk_ does not
+check for errors.
+
+
+_otg-disk_ requires a working network connection and can be
+configured to start it hotspot if no other network is found.
+
+ : **AP_AUTOSTART** = yes|no
+  controls if the access point should be started (= `yes`) or not.
+
+ : **AP_AUTOSTART_DELAY** = _num_
+  _otg-disk_ wait for this amount of seconds before network
+  connections are tested to give any network enough time to go
+  online.
+
+ : **AP_AUTOSTART_HTTP** = yes|no
+  defines if _otg-disk_'s HTTP server should be started with the
+  automatic access point.  This supports (outdoor) scenarios when
+  operating _otg-disk_ from a mobile phone with a web (instead of
+  samba) client.
+
+The access point is only started if no active network connection is
+found, which includes
+
+ - any W-Lan network,
+ - ethernet, and
+ - OTG USB network.
+
+
+### Internal options
+
+The are some more variables available but they are not meant to be
+changed.
+
+ : **DIR_PERM** = _perm_
+  set the permissions for samba share directories; default is `775`.
+
+ : **MYPID_FILE** = _fn_
+  name of _otg-disk_'s pidfile.
+
+ : **RUN** = _directory_
+  set the directory for _otg-disk_'s runtime files.  The default is
+  _/run/otg-disk_.
+
+ : **SMB_CONF** = _fn_
+  name of _smbd_'s configuration file.
+
+ : **SMB_LOG** = _fn_
+  name of _smbd_'s logfile.
+
+
+## Operation Commands
+
+### Installation
+
+The following operations require that superuser permissions are
+already set, e.g. using _sudo_.
+
+ : **--apt-get** _pkg_ ... - _service_
+  call _apt-get_ to install the listed software packages and
+  stop the services.
+
+ : **--apt-system-update**
+  convenience function: run _apt-get_ to update all installed
+  packages.
+
+ : **--create-share-account** _user_ _dir_
+  create the system account _user_ with home directory _dir_ and no
+  login shell (set to _/bin/true_) to be used as samba share
+  account.
+
+ : **--install**
+  create a service unit to install _otg-disk_ as _systemd_
+  service.  The script will start automatically when the system
+  boots but not when installed.
+
+ : **--install-otg**
+  like `--install` but the service will start only if on-the-go
+  USB network is found on startup.
+
+ : **--uninstall**
+  stop a running _otg-disk_ service and removes the unit file.
+
+
+### Configuration
+
+ : **--configure** --*var* *val* ...
+  Modify the configuration variable(s) *var* in the _otg-disk_ script.
+  The changes between old and new script is displayed and the user
+  is asked for a confirmation of the changes.  The `--configure` has
+  some variations:
+
+   - `--names` lists the variable names as options,
+   - ``--print _var_ ...`` prints values of the given variables (on
+     per line), and
+   - `--help` displays usage information.
+
+ : **--mkdirs**
+  Display commands to create missing directories for samba, httpd and
+  dlna server.
+
+ : **--show-config** \[_regex_ ...\]
+  Print _otg-disk_'s configuration.  If one or more _regex_ is
+  present than only variables matching any of _regex_ (case
+  ignored) are shown.
+
+ : **--smb.conf**
+  Print the computed _smbd_ configuration file.
+
+ : **--sys-config**
+  Display shell commands to adjust the Raspberry configuration for
+  _otg-disk_'s basic functionality.
+
+
+### Operation
+
+The operational commands below can be run as normal user and acquire
+superuser privileges (_sudo_) as required.  None of the options
+below (with the exception of disable/enable) change something on
+your system.  Such operations are listed above in the Installation
+section (even if they are not fully related to installing something)
+and require explicit superuser permissions.
+
+ : **--disable**
+  Disable (but don't stop) the _otg-disk_ system service.
+
+ : **--enable**
+  Re-enable the service to start on system boot.
+
+ : **--help**
+  Show the list of operations.
+
+ : **--logfile**
+  Print the name of _otg-disk_'s logfile.
+
+ : **--mount** \[_disk_ _partition_ _uuid_\]
+  List all USB disks that were mounted by _otg-disk_.
+  A matching partition will be mounted if the parameters are present
+  but this operation is called internally from _otg-disk_'s USB
+  monitor and not part of the user interface.
+
+ : **--op** _service_ _operation_
+  Runs _service_'s action for _operation_.  This is an internal
+  operation and is not part of the user interface.  Instead the
+  corresponding file ``$SYSCTRL/_service_._operation_`` should be
+  removed to trigger the action.
+
+ : **--ps** \[_name_\]
+  List _otg-disk_'s processes.  If _name_ is present the process ids
+  of _otg-disk_'s process _name_ is returned.
+
+ : **--reopen-log**
+  Open a new logfile.
+
+ : **--restart**
+  Restart the service.
+
+ : **--scan-files**
+  List extension files found in _otg-disk_'s directory.
+
+ : **--start**
+  Start _otg-disk_.
+
+ : **--status**
+  Check if _otg-disk_'s is running.
+
+ : **--stop**
+  Stop _otg-disk_.
+
+ : **--tail**
+  Follow _otg-disk_'s logfile.
+
+ : **--tcp** \[_port_\]
+  List processes with TCP service ports.  If _port_ is present the
+  pid of the service listening on _port_ is returned.  `--tcp` will
+  not list _smbd_ (ot other services that are started from
+  _otg-disk_ with a different user).  Process names are not as well
+  computed an in `--ps`.
+
+ : **--umount** _uuid_
+  Unmount the partition _uuid_ which must have been mounted by
+  _otg-disk_.
+
+ : **--version**
+  Print _otg-disk_'s version.
+
+ : **--wlan**
+  Print the W-Lan status.
+
+Use **--help** to get a brief overview about the operations.
+
+
+
+-->
+</HTML>

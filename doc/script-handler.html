@@ -1,0 +1,346 @@
+<HTML>
+<HEAD>
+  <!-- software: muc 1.1.2 -->
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <TITLE>script-handler.cgi</TITLE>
+  <LINK HREF="index.html" REL="home">
+<STYLE TYPE="text/css">
+    A, A:visited { text-decoration: none; color: blue; }
+    A:hover { color: #00FF00; }
+    BODY { padding: 1em; margin: auto; max-width: 700; }
+    BODY, TD, TH { font-size: 11pt; line-height: 1.5;
+        font-family: Verdana, Georgia, Helvetica, Arial, sans-serif;
+        }
+    PRE.code { margin-left: 2em; padding: .5em; background: #F0F0F0; color: #0000FF;
+	 line-height: 1.2;
+        font-size: 90%; overflow-x: auto; overflow-y: auto;
+        font-family: "courier new", monospace;
+        border: 1px solid black; border-radius: 0px; border: 1px solid grey;
+        }
+    CODE { font-family: "courier new", monospace; color: #0000FF;
+        font-size: 90%; padding: .2em .4em;
+        background: #F0F0F0; border-radius: 6px;
+        vertical-align: middle;
+        }
+    TABLE { margin-left: 2em; border-spacing: 0px; }
+    TD, TH { border: 1px dotted gray; padding-left: .5em; padding-right: .5em; }
+    BLOCKQUOTE { margin-left: 2em; border-left: 2px solid blue; padding-left: 1em; }
+    DIV.navigator { padding: 2px; font-size: 80%; background: #F0FFF0; border-bottom: 1px solid blue; }
+    DIV.lastmod { font-size: 80%; }
+    DIV.introduction { font-size: 90%; margin: 0 2em 0 2em; }
+</STYLE>
+<LINK HREF="styles.css" REL="stylesheet" TYPE="text/css">
+<STYLE TYPE="text/css">
+DIV.navigator { background: #F0FFF0; }
+DIV.warning { margin: 1em 0em 1em 2em; padding: .4em; margin-right: 2em; border: .3em solid red; }
+</STYLE>
+<SCRIPT SRC="keyboard.js" TYPE="text/javascript"></SCRIPT>
+</HEAD>
+<BODY>
+<NAV><DIV ALIGN="RIGHT" CLASS="navigator"><A HREF="index.html" REL="Home">Home</A>
+| <A HREF="contents.html" REL="Contents">Contents</A>
+| <A HREF="safety-instructions.html" REL="first">F</A>PN<A HREF="reference.html" REL="last">L</A></DIV></NAV>
+<DIV ALIGN="RIGHT" CLASS="lastmod">Last modified: 2023-11-16 07:18</DIV>
+<P>With Linux a lot of things can be done with a simple shell script if
+ suitable parameters are provided.  <EM>script-handler.cgi</EM> creates
+ simple HTML-forms from data included in a script file and runs the
+ script with the provided input when the form is submitted.</P>
+<H1><P>script-handler.cgi</P></H1>
+<H3><P>Installation and usage</P></H3>
+<P><EM>script-handler.cgi</EM> is installed by storing it in the HTTP server's
+CGI script directory.  When accessed <EM>script-handler.cgi</EM> creates
+file listings of requested directories inserting links to compatible
+scripts to itself.  Access can be limited by assigning a required
+<CODE>PATH_INFO</CODE> prefix to the <CODE>base_address</CODE> variable, e.g.</P>
+<PRE CLASS="code">base_address = "/control/";</PRE>
+<P>requires all requests to begin with <CODE>/control/</CODE> and non-matching
+requests are redirected there.</P>
+<H3><P>Operation</P></H3>
+<P>When a file is retrieved via <EM>script-handler.cgi</EM> (GET request), the
+first two <CODE>#</CODE>-comment blocks are read to create an HTML input form.
+When the form is submitted (POST request)</P>
+<UL>
+<LI>the CGI data is exported as shell variables,</LI>
+<LI>the script is executed, and</LI>
+<LI>any output from the script is sent to the client.</LI>
+</UL>
+<P><EM>script-handler.cgi</EM> reads two types of definitions from comment
+blocks:</P>
+<UL>
+<LI>script attributes and</LI>
+<LI>input control definitions.</LI>
+</UL>
+<P>Both start with a <CODE>:</CODE> as first char.  Non-empty lines that do not
+start with a colon are inserted as HTML-text.</P>
+<H3><P>Script Attributes</P></H3>
+<DL>
+<DT><STRONG>:name</STRONG> <EM>text</EM> :</DT>
+<DD>If set the name is displayed in the file listing and used as title
+for the HTML page.</DD>
+<DT><STRONG>:title</STRONG> <EM>text</EM> :</DT>
+<DD>Set the HTML page title.</DD>
+<DT><STRONG>:content-type</STRONG> <EM>type</EM> :</DT>
+<DD>Set the script's content-type.  The default is text/plain.  If
+content-type is set to <CODE>.</CODE> the script provides the content-type.
+text/plain content in wrapped into an HTML PRE-tag.</DD>
+<DT><STRONG>:is-script</STRONG> :</DT>
+<DD>Mark the file as runnable script in the case it does not contain
+any input elements, like <A HREF="ps.sh" TARGET="_blank">ps.sh</A>.</DD>
+<DT><STRONG>:(</STRONG> <EM>script</EM> <STRONG>)</STRONG> :</DT>
+<DD>Execute <EM>script</EM> and read input control definitons from its output
+If <EM>script</EM> starts with <CODE>$0</CODE> the requested file name (i.e. the
+script) is substituted.</DD>
+</DL>
+<H3><P>Input Controls</P></H3>
+<P>The syntax to define an input control is</P>
+<PRE CLASS="code"><STRONG>:</STRONG><EM>type</EM> <EM>name</EM> [<EM>options</EM>] <EM>value</EM></PRE>
+<P>where</P>
+<DL>
+<DT><EM>name</EM> :</DT>
+<DD>is the name of the input variable; when passed to the script the
+ name is uppercased and prefixed with <CODE>CGI_</CODE>.</DD>
+<DT><EM>value</EM> :</DT>
+<DD>is the variable's default value.</DD>
+</DL>
+<P>Valid control types are</P>
+<DL>
+<DT><STRONG>:label</STRONG> :</DT>
+<DD>create a label element for <EM>variable</EM> showing <EM>value</EM> as static
+ text.</DD>
+<DT><STRONG>:text</STRONG>, <STRONG>:password</STRONG>, <STRONG>:number</STRONG>, <STRONG>:range</STRONG>, <STRONG>:hidden</STRONG> :</DT>
+<DD>create an <CODE>&lt;INPUT&gt;</CODE> element of that type.</DD>
+<DT><STRONG>:checkbox</STRONG>, <STRONG>:check</STRONG> :</DT>
+<DD>create a check box element.</DD>
+<DT><STRONG>:radio</STRONG> :</DT>
+<DD>create a radio group element.</DD>
+<DT><STRONG>:select</STRONG> :</DT>
+<DD>create a selection list to choose a value.  The <EM>value</EM> parameter
+ is expected to by a comma and/or white-space separated list of
+ <EM>key</EM>:<EM>value</EM> pairs.</DD>
+<DT><STRONG>:auth</STRONG> :</DT>
+<DD>create a INPUT TYPE="password" field.  The user supplied value
+ must equal the plain-text "password" stored in the file
+ <EM>.script.auth</EM> in the current directory.</DD>
+</DL>
+<P>Checkbox and radio elements expect <EM>value</EM> to be a single word (= a
+string delimited by white-space) and any text behind is shown as text
+describing the option.</P>
+<H3><P>Control Options</P></H3>
+<P>Input controls may have the following options, which are translated
+into HTML tag properties.  No checks are done if an option is valid
+for the input element.</P>
+<UL>
+<LI>Boolean options without a parameter: --autofocus, --checked,
+ --disabled, --multiple, --readonly, --required.</LI>
+<LI>Option with a parameter following immediately separated with
+ an equal sign <CODE>=</CODE>: --autocomplete, --min, --max, --maxlength,
+ --pattern, --placeholder, --size, --step.</LI>
+</UL>
+<H3><P>Security Considerations.</P></H3>
+<P><EM>script-handler.cgi</EM> implements a weak form of authorization.  If a
+form contains an <STRONG>:auth</STRONG> type control its input value is compared
+against the value stored in the file <EM>.script.auth</EM> in the script's
+directory.</P>
+<UL>
+<LI>The "password" is stored as plain-text,</LI>
+<LI>shared with all other scripts in the same directory,</LI>
+<LI>which is also the same for all users.</LI>
+</UL>
+<P><STRONG>Recommendation:</STRONG> When you are going to use <EM>script-handler.cgi</EM> in
+an unsafe network (i.e. a network where you do not know who can
+connect to it) you should</P>
+<OL>
+<LI>use HTTPS,</LI>
+<LI>use the HTTP server's authorization mechanisms for access
+ protection.</LI>
+</OL>
+<P><EM>script-handler.cgi</EM> is willing to read and process any file addressed
+by the <CODE>PATH_TRANSLATED</CODE> variable.  Depending on your server's content
+this might not be what you want and you have to restrict that in the
+script code.  There are no configuration options available for that.</P>
+<P><STRONG>Recommendation:</STRONG> Assign a value to the <CODE>base_address</CODE> variable
+inside the script to limit access.</P>
+<P>When running a script the CGI parameters are passed as environment
+variables.  <EM>script-handler.cgi</EM> quotes all values for a <EM>sh</EM>-like
+shell (e.g. <EM>dash</EM> or <EM>bash</EM> but not <EM>csh</EM> - if that still matters).</P>
+<H3><P>Examples</P></H3>
+<UL>
+<LI><A HREF="shutdown.sh" TARGET="_blank">Shutdown or reboot the computer</A></LI>
+<LI><A HREF="camera-test.sh" TARGET="_blank">Operate the Raspi camera</A></LI>
+<LI><A HREF="ps.sh" TARGET="_blank">Show list of processes</A></LI>
+</UL>
+</BODY>
+<!-- source: text/markdown
+
+ With Linux a lot of things can be done with a simple shell script if
+ suitable parameters are provided.  _script-handler.cgi_ creates
+ simple HTML-forms from data included in a script file and runs the
+ script with the provided input when the form is submitted.
+
+
+# script-handler.cgi
+
+
+### Installation and usage
+
+_script-handler.cgi_ is installed by storing it in the HTTP server's
+CGI script directory.  When accessed _script-handler.cgi_ creates
+file listings of requested directories inserting links to compatible
+scripts to itself.  Access can be limited by assigning a required
+`PATH_INFO` prefix to the `base_address` variable, e.g.
+
+    base_address = "/control/";
+
+requires all requests to begin with `/control/` and non-matching
+requests are redirected there.
+
+
+### Operation
+
+When a file is retrieved via _script-handler.cgi_ (GET request), the
+first two `#`-comment blocks are read to create an HTML input form.
+When the form is submitted (POST request)
+
+ - the CGI data is exported as shell variables,
+ - the script is executed, and
+ - any output from the script is sent to the client.
+
+_script-handler.cgi_ reads two types of definitions from comment
+blocks:
+
+ - script attributes and
+ - input control definitions.
+ 
+Both start with a `:` as first char.  Non-empty lines that do not
+start with a colon are inserted as HTML-text.
+
+
+### Script Attributes
+
+ : **:name** _text_ :
+  If set the name is displayed in the file listing and used as title
+  for the HTML page.
+
+ : **:title** _text_ :
+  Set the HTML page title.
+
+ : **:content-type** _type_ :
+  Set the script's content-type.  The default is text/plain.  If
+  content-type is set to `.` the script provides the content-type.
+  text/plain content in wrapped into an HTML PRE-tag.
+
+ : **:is-script** :
+  Mark the file as runnable script in the case it does not contain
+  any input elements, like [ps.sh](ps.sh).
+
+ : **:(** _script_ **)** :
+  Execute _script_ and read input control definitons from its output
+  If _script_ starts with `$0` the requested file name (i.e. the
+  script) is substituted.
+
+
+### Input Controls
+
+The syntax to define an input control is
+
+``` _
+    **:**_type_ _name_ \[_options_\] _value_
+```
+
+where
+
+ : _name_ :
+   is the name of the input variable; when passed to the script the
+   name is uppercased and prefixed with `CGI_`.
+
+ : _value_ :
+   is the variable's default value.
+
+Valid control types are
+
+ : **:label** :
+   create a label element for _variable_ showing _value_ as static
+   text.
+
+ : **:text**, **:password**, **:number**, **:range**, **:hidden** :
+   create an `<INPUT` element of that type.
+
+ : **:checkbox**, **:check** :
+   create a check box element.
+
+ : **:radio** :
+   create a radio group element.
+
+ : **:select** :
+   create a selection list to choose a value.  The _value_ parameter
+   is expected to by a comma and/or white-space separated list of
+   _key_:_value_ pairs.
+
+ : **:auth** :
+   create a INPUT TYPE="password" field.  The user supplied value
+   must equal the plain-text "password" stored in the file
+   _.script.auth_ in the current directory.
+
+Checkbox and radio elements expect _value_ to be a single word (= a
+string delimited by white-space) and any text behind is shown as text
+describing the option.
+
+
+### Control Options
+
+Input controls may have the following options, which are translated
+into HTML tag properties.  No checks are done if an option is valid
+for the input element.
+
+ - Boolean options without a parameter: --autofocus, --checked,
+   --disabled, --multiple, --readonly, --required.
+ 
+ - Option with a parameter following immediately separated with
+   an equal sign `=`: --autocomplete, --min, --max, --maxlength,
+   --pattern, --placeholder, --size, --step.
+
+
+### Security Considerations.
+
+_script-handler.cgi_ implements a weak form of authorization.  If a
+form contains an **:auth** type control its input value is compared
+against the value stored in the file _.script.auth_ in the script's
+directory.
+
+ - The "password" is stored as plain-text,
+ - shared with all other scripts in the same directory,
+ - which is also the same for all users.
+
+**Recommendation:** When you are going to use _script-handler.cgi_ in
+an unsafe network (i.e. a network where you do not know who can
+connect to it) you should
+
+ 1. use HTTPS,
+ 2. use the HTTP server's authorization mechanisms for access
+    protection.
+
+_script-handler.cgi_ is willing to read and process any file addressed
+by the `PATH_TRANSLATED` variable.  Depending on your server's content
+this might not be what you want and you have to restrict that in the
+script code.  There are no configuration options available for that.
+
+**Recommendation:** Assign a value to the `base_address` variable
+inside the script to limit access.
+
+
+When running a script the CGI parameters are passed as environment
+variables.  _script-handler.cgi_ quotes all values for a _sh_-like
+shell (e.g. _dash_ or _bash_ but not _csh_ - if that still matters).
+
+
+### Examples
+
+ - [Shutdown or reboot the computer](shutdown.sh)
+ - [Operate the Raspi camera](camera-test.sh)
+ - [Show list of processes](ps.sh)
+
+
+
+-->
+</HTML>

@@ -1,0 +1,376 @@
+<HTML>
+<HEAD>
+  <!-- software: muc 1.1.2 -->
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <TITLE>Installation</TITLE>
+  <LINK HREF="index.html" REL="home">
+<STYLE TYPE="text/css">
+    A, A:visited { text-decoration: none; color: blue; }
+    A:hover { color: #00FF00; }
+    BODY { padding: 1em; margin: auto; max-width: 700; }
+    BODY, TD, TH { font-size: 11pt; line-height: 1.5;
+        font-family: Verdana, Georgia, Helvetica, Arial, sans-serif;
+        }
+    PRE.code { margin-left: 2em; padding: .5em; background: #F0F0F0; color: #0000FF;
+	 line-height: 1.2;
+        font-size: 90%; overflow-x: auto; overflow-y: auto;
+        font-family: "courier new", monospace;
+        border: 1px solid black; border-radius: 0px; border: 1px solid grey;
+        }
+    CODE { font-family: "courier new", monospace; color: #0000FF;
+        font-size: 90%; padding: .2em .4em;
+        background: #F0F0F0; border-radius: 6px;
+        vertical-align: middle;
+        }
+    TABLE { margin-left: 2em; border-spacing: 0px; }
+    TD, TH { border: 1px dotted gray; padding-left: .5em; padding-right: .5em; }
+    BLOCKQUOTE { margin-left: 2em; border-left: 2px solid blue; padding-left: 1em; }
+    DIV.navigator { padding: 2px; font-size: 80%; background: #F0FFF0; border-bottom: 1px solid blue; }
+    DIV.lastmod { font-size: 80%; }
+    DIV.introduction { font-size: 90%; margin: 0 2em 0 2em; }
+</STYLE>
+<LINK HREF="styles.css" REL="stylesheet" TYPE="text/css">
+<STYLE TYPE="text/css">
+DIV.navigator { background: #F0FFF0; }
+</STYLE>
+<SCRIPT SRC="keyboard.js" TYPE="text/javascript"></SCRIPT>
+</HEAD>
+<BODY>
+<NAV><DIV ALIGN="RIGHT" CLASS="navigator"><A HREF="index.html" REL="Home">Home</A>
+| <A HREF="contents.html" REL="Contents">Contents</A>
+| <A HREF="safety-instructions.html" REL="first">F</A><A HREF="safety-instructions.html" REL="prev">P</A><A HREF="easy-mode.html" REL="next">N</A><A HREF="reference.html" REL="last">L</A></DIV></NAV>
+<DIV ALIGN="RIGHT" CLASS="lastmod">Last modified: 2023-11-16 07:18</DIV>
+<H1><P>Installation</P></H1>
+<P>There is one pre-requisite you need before you start with the
+following: you need to have <EM>gawk</EM> installed.</P>
+<PRE CLASS="code">$ sudo apt-get update  &&  sudo apt-get install gawk</PRE>
+<P>Having <EM>gawk</EM> is so normal for me that I didn't think of it when
+writing the documentation.</P>
+<H3><P>Installing otg-disk</P></H3>
+<P><EM>otg-disk</EM> itself does not need to be installed in a specific way.
+You can store it anywhere on your disk and run it from there and if
+there's something particular about the storage location then it is
+that it should <EM>not</EM> be installed in a system directory like <EM>/bin</EM>
+etc.  This document assumes that you have the script stored
+in the current directory, which can by in or anywhere below your
+$HOME.</P>
+<H3><P>Command line interface</P></H3>
+<P><EM>otg-disk</EM> integrates all operations it needs and they are chosen with
+the first command line parameter.  <CODE>otg-disk --help</CODE> lists them with a
+very short explanation.  All operations start with two dashes <CODE>--</CODE>
+with <CODE>--help</CODE> as the only exception: <CODE>otg-disk help</CODE> displays
+<EM>otg-disk</EM>'s command information too.  Running <EM>otg-disk</EM> without a
+parameter prints an error message.</P>
+<P>Operation names can not be abbreviated and <EM>otg-disk</EM> supports <EM>bash</EM>
+command completion.  Since you will not interact with <EM>otg_disk</EM> on a
+daily basis it is not expected that the completion code is added to
+the system's configuration.  Instead it can be added on demand with</P>
+<PRE CLASS="code">$ eval "$(./otg-disk --bc)"</PRE>
+<P>in the shell where you work with <EM>otg-disk</EM>.  You don't have to
+remember the command above: it is printed as one of the last lines
+from <CODE>--help</CODE>.</P>
+<H3><P>Displaying, changing and saving configuration</P></H3>
+<P><EM>otg-disk</EM> does not use a configuration file.  All configuration is
+set with shell environment variables at the top of the script.  This
+is unusual but has an interesting effect, which is important for me:
+it's all in one file.  Effectively you can use any text editor to view
+or change <EM>otg-disk</EM>'s configuration.  Or you can use its command line
+interface.</P>
+<P><CODE>./otg-disk --show-config</CODE> displays the effective configuration values
+as they are used after evironment variables have been substituted.
+With no further arguments all values are listed.  Any argument is
+interpreted as regular expression which is tested againt the option
+names and matching names are printed.  All matching is done in
+lowercase.  The important thing to remember is that if you provide a
+common part of a set of option names all options aare listed as in</P>
+<PRE CLASS="code">$ ./otg-disk --show-config ap</PRE>
+<P>Regular expressions are nice but only for sophisticated things.</P>
+<P>The <CODE>--configure</CODE> operation sets configuration options.  It expects
+sequences of combinations of names and values on the command line and
+edits the corresponding variables inside the script.  (The
+<EM>otg-script</EM> modifies itself.) Configuration names</P>
+<UL>
+<LI>must be preceded with two dashes <CODE>--</CODE>,</LI>
+<LI>may be given in lowercase characters with dashes instead of
+ underscores.</LI>
+</UL>
+<P>For example,</P>
+<PRE CLASS="code">$ ./otg-disk --configure --public-share-name public \
+    --public-share-path '$HOME/tmp/otg-disk'</PRE>
+<P>would set the variable <CODE>PUBLIC_SHARE_NAME</CODE> to <CODE>public</CODE> surrounding the
+value with double quotes:</P>
+<PRE CLASS="code">PUBLIC_SHARE_NAME="public"
+PUBLIC_SHARE_PATH="$HOME/tmp/otg-disk"</PRE>
+<P>The <CODE>--configure</CODE> operation has some more uses.  It can also print
+configuration values - but only the values:</P>
+<PRE CLASS="code">./otg-disk --configure --print AP_IFC AP_IP_ADDR
+wlan0
+192.168.1.1</PRE>
+<P>This may be used to query options from other scripts.</P>
+<P>Finally, <CODE>--configure</CODE> can be used to save configuration in a file,
+more precise: a shell script.</P>
+<PRE CLASS="code">./otg-disk --configure --export private_</PRE>
+<P>prints</P>
+<PRE CLASS="code">#!/bin/sh
+#
+
+./otg-disk --configure \
+    --private-share-name '' \
+    --private-share-path '/home/$USER/tmp/otg-disk' \
+    --private-share-username '$USER' \
+    --private-share-password 'PutYourPasswordHere' \
+    --private-share-opt ''</PRE>
+<P>which can be stored in a file to later reset these values.
+<CODE>--show-config --shell ...</CODE> is similar but does not retain environment
+variables inside the option values.</P>
+<H3><P>Installing additional software</P></H3>
+<P><EM>otg-disk</EM> contains all additional scripts and configuration but it
+needs some software packages from the operating system.  They must be
+installed first.  This can be done manually (see end of this document)
+but it's simple for the basic packages.</P>
+<PRE CLASS="code">$ ./otg-disk --sys-config</PRE>
+<P>displays the commands, which are required to install all missing
+packages and to create configured directories.  You can copy-paste
+selected commands to the shell or - after checking - run</P>
+<PRE CLASS="code">$ ./otg-disk --sys-config | sh -x</PRE>
+<H3><P>Starting otg-disk</P></H3>
+<P>When you have installed required additional packages and configured
+your system you can run <EM>otg-disk</EM> with</P>
+<PRE CLASS="code">$ ./otg-disk --start</PRE>
+<P>The server runs in foreground until it is terminated with <CODE>Ctrl+C</CODE> and
+log messages are printed to the terminal so the process should not be
+backgrounded.  If you want to run <EM>otg-disk</EM>'s operations you must
+open another console and make sure to invoke the same copy of the
+script.</P>
+<P>See the <A HREF="easy-mode.html#systemd-service" TARGET="_blank" TITLE="Installing as service">next document</A> to read how <EM>otg-disk</EM> is installed as
+system service.</P>
+<H3><P>Manual installation of additional packages</P></H3>
+<P>Just in case you do not want <CODE>--sys-config</CODE> to install additional
+software, here are the instructions for manual work.</P>
+<P><EM>otg-disk</EM>'s core function is to run a <EM>samba</EM> file server.  The
+required packages are</P>
+<UL>
+<LI><EM>samba</EM> for the file server, and</LI>
+<LI><EM>inotify-tools</EM> to monitor file deletions.</LI>
+</UL>
+<P>If you are not sure what packages you might need install, run</P>
+<PRE CLASS="code">$ ./otg-disk --apt-check</PRE>
+<P>This lists the packages you already have and those, which are
+missing.  In case the two above mentioned pckages are missing you could
+install them with</P>
+<PRE CLASS="code">$ sudo apt update  &&  sudo apt install samba inotify-tools
+$ sudo systemctl stop smbd nmbd
+$ sudo systemctl disable nmbd smbd</PRE>
+<P>This installs the software but disables the services to start during
+system boot because we want them on demand from <EM>otg-disk</EM>.</P>
+<P>A shortcut for the install-stop-disable commands above is</P>
+<PRE CLASS="code">$ sudo ./otg-disk --apt-get samba inotify-tools - smbd nmbd</PRE>
+<P>You still have to run <CODE>sudo apt-get update</CODE> before to update the
+repository information.</P>
+<P>In case you have already a running <EM>samba</EM> server, there is nothing
+to do.  <EM>otg-disk</EM> will stop the services <EM>smbd</EM> and <EM>nmbd</EM> and
+restart them when it terminates.  Also the service configuration is
+only local and will not interfere with yours.</P>
+<P>The document descibing the <A HREF="easy-mode.html" TITLE="Easy Mode">easy mode</A> lists instructions to
+install the other packages manually, if you want them.</P>
+</BODY>
+<!-- source: text/markdown
+# Installation
+
+There is one pre-requisite you need before you start with the
+following: you need to have _gawk_ installed.
+
+    $ sudo apt-get update  &&  sudo apt-get install gawk
+
+Having _gawk_ is so normal for me that I didn't think of it when
+writing the documentation.
+
+
+### Installing otg-disk
+
+_otg-disk_ itself does not need to be installed in a specific way.
+You can store it anywhere on your disk and run it from there and if
+there's something particular about the storage location then it is
+that it should _not_ be installed in a system directory like _/bin_
+etc.  This document assumes that you have the script stored
+in the current directory, which can by in or anywhere below your
+$HOME.
+
+
+### Command line interface
+
+_otg-disk_ integrates all operations it needs and they are chosen with
+the first command line parameter.  `otg-disk --help` lists them with a
+very short explanation.  All operations start with two dashes `--`
+with `--help` as the only exception: `otg-disk help` displays
+_otg-disk_'s command information too.  Running _otg-disk_ without a
+parameter prints an error message.
+
+Operation names can not be abbreviated and _otg-disk_ supports _bash_
+command completion.  Since you will not interact with _otg_disk_ on a
+daily basis it is not expected that the completion code is added to
+the system's configuration.  Instead it can be added on demand with
+
+    $ eval "$(./otg-disk --bc)"
+
+in the shell where you work with _otg-disk_.  You don't have to
+remember the command above: it is printed as one of the last lines
+from `--help`.
+
+
+### Displaying, changing and saving configuration
+
+_otg-disk_ does not use a configuration file.  All configuration is
+set with shell environment variables at the top of the script.  This
+is unusual but has an interesting effect, which is important for me:
+it's all in one file.  Effectively you can use any text editor to view
+or change _otg-disk_'s configuration.  Or you can use its command line
+interface.
+
+`./otg-disk --show-config` displays the effective configuration values
+as they are used after evironment variables have been substituted.
+With no further arguments all values are listed.  Any argument is
+interpreted as regular expression which is tested againt the option
+names and matching names are printed.  All matching is done in
+lowercase.  The important thing to remember is that if you provide a
+common part of a set of option names all options aare listed as in
+
+    $ ./otg-disk --show-config ap
+
+Regular expressions are nice but only for sophisticated things.
+
+The `--configure` operation sets configuration options.  It expects
+sequences of combinations of names and values on the command line and
+edits the corresponding variables inside the script.  (The
+_otg-script_ modifies itself.) Configuration names
+
+ - must be preceded with two dashes `--`,
+ - may be given in lowercase characters with dashes instead of
+   underscores.
+
+For example,
+
+    $ ./otg-disk --configure --public-share-name public \
+        --public-share-path '$HOME/tmp/otg-disk'
+
+would set the variable `PUBLIC_SHARE_NAME` to `public` surrounding the
+value with double quotes:
+
+    PUBLIC_SHARE_NAME="public"
+    PUBLIC_SHARE_PATH="$HOME/tmp/otg-disk"
+
+
+The `--configure` operation has some more uses.  It can also print
+configuration values - but only the values:
+
+    ./otg-disk --configure --print AP_IFC AP_IP_ADDR
+    wlan0
+    192.168.1.1
+
+This may be used to query options from other scripts.
+
+Finally, `--configure` can be used to save configuration in a file,
+more precise: a shell script.
+
+    ./otg-disk --configure --export private_
+
+prints
+
+```
+    #!/bin/sh
+    #
+
+    ./otg-disk --configure \
+        --private-share-name '' \
+        --private-share-path '/home/$USER/tmp/otg-disk' \
+        --private-share-username '$USER' \
+        --private-share-password 'PutYourPasswordHere' \
+        --private-share-opt ''
+```
+
+which can be stored in a file to later reset these values.
+`--show-config --shell ...` is similar but does not retain environment
+variables inside the option values.
+
+
+### Installing additional software
+
+_otg-disk_ contains all additional scripts and configuration but it
+needs some software packages from the operating system.  They must be
+installed first.  This can be done manually (see end of this document)
+but it's simple for the basic packages.
+
+    $ ./otg-disk --sys-config
+
+displays the commands, which are required to install all missing
+packages and to create configured directories.  You can copy-paste
+selected commands to the shell or - after checking - run
+
+    $ ./otg-disk --sys-config | sh -x
+
+
+### Starting otg-disk
+
+When you have installed required additional packages and configured
+your system you can run _otg-disk_ with
+
+    $ ./otg-disk --start
+
+The server runs in foreground until it is terminated with `Ctrl+C` and
+log messages are printed to the terminal so the process should not be
+backgrounded.  If you want to run _otg-disk_'s operations you must
+open another console and make sure to invoke the same copy of the
+script.
+
+See the [next document][2] to read how _otg-disk_ is installed as
+system service.
+
+
+### Manual installation of additional packages
+
+Just in case you do not want `--sys-config` to install additional
+software, here are the instructions for manual work.
+
+_otg-disk_'s core function is to run a _samba_ file server.  The
+required packages are
+
+ - _samba_ for the file server, and
+ - _inotify-tools_ to monitor file deletions.
+
+If you are not sure what packages you might need install, run
+
+    $ ./otg-disk --apt-check
+
+This lists the packages you already have and those, which are
+missing.  In case the two above mentioned pckages are missing you could
+install them with
+
+    $ sudo apt update  &&  sudo apt install samba inotify-tools
+    $ sudo systemctl stop smbd nmbd
+    $ sudo systemctl disable nmbd smbd
+
+This installs the software but disables the services to start during
+system boot because we want them on demand from _otg-disk_.
+
+A shortcut for the install-stop-disable commands above is
+
+    $ sudo ./otg-disk --apt-get samba inotify-tools - smbd nmbd
+
+You still have to run `sudo apt-get update` before to update the
+repository information.
+
+In case you have already a running _samba_ server, there is nothing
+to do.  _otg-disk_ will stop the services _smbd_ and _nmbd_ and
+restart them when it terminates.  Also the service configuration is
+only local and will not interfere with yours.
+
+The document descibing the [easy mode][1] lists instructions to
+install the other packages manually, if you want them.
+
+ [1]: easy-mode.md (Easy Mode)
+ [2]: easy-mode.md#systemd-service (Installing as service)
+
+
+-->
+</HTML>

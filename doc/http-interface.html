@@ -1,0 +1,234 @@
+<HTML>
+<HEAD>
+  <!-- software: muc 1.1.2 -->
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <TITLE>HTTP Interface</TITLE>
+  <LINK HREF="index.html" REL="home">
+<STYLE TYPE="text/css">
+    A, A:visited { text-decoration: none; color: blue; }
+    A:hover { color: #00FF00; }
+    BODY { padding: 1em; margin: auto; max-width: 700; }
+    BODY, TD, TH { font-size: 11pt; line-height: 1.5;
+        font-family: Verdana, Georgia, Helvetica, Arial, sans-serif;
+        }
+    PRE.code { margin-left: 2em; padding: .5em; background: #F0F0F0; color: #0000FF;
+	 line-height: 1.2;
+        font-size: 90%; overflow-x: auto; overflow-y: auto;
+        font-family: "courier new", monospace;
+        border: 1px solid black; border-radius: 0px; border: 1px solid grey;
+        }
+    CODE { font-family: "courier new", monospace; color: #0000FF;
+        font-size: 90%; padding: .2em .4em;
+        background: #F0F0F0; border-radius: 6px;
+        vertical-align: middle;
+        }
+    TABLE { margin-left: 2em; border-spacing: 0px; }
+    TD, TH { border: 1px dotted gray; padding-left: .5em; padding-right: .5em; }
+    BLOCKQUOTE { margin-left: 2em; border-left: 2px solid blue; padding-left: 1em; }
+    DIV.navigator { padding: 2px; font-size: 80%; background: #F0FFF0; border-bottom: 1px solid blue; }
+    DIV.lastmod { font-size: 80%; }
+    DIV.introduction { font-size: 90%; margin: 0 2em 0 2em; }
+</STYLE>
+<LINK HREF="styles.css" REL="stylesheet" TYPE="text/css">
+<STYLE TYPE="text/css">
+DIV.navigator { background: #F0FFF0; }
+</STYLE>
+<SCRIPT SRC="keyboard.js" TYPE="text/javascript"></SCRIPT>
+</HEAD>
+<BODY>
+<NAV><DIV ALIGN="RIGHT" CLASS="navigator"><A HREF="index.html" REL="Home">Home</A>
+| <A HREF="contents.html" REL="Contents">Contents</A>
+| <A HREF="safety-instructions.html" REL="first">F</A><A HREF="easy-mode.html" REL="prev">P</A><A HREF="usb-disks.html" REL="next">N</A><A HREF="reference.html" REL="last">L</A></DIV></NAV>
+<DIV ALIGN="RIGHT" CLASS="lastmod">Last modified: 2023-11-16 07:18</DIV>
+<P><EM>otg-disk</EM> can run an HTTP server.  This document describes two
+ possible applications, which support using the <EM>otg-disk</EM> Raspberry
+ with mobile phones: file uploads and system control.  (Both scripts
+ can be used without <EM>otg-disk</EM>).</P>
+<H1><P>HTTP Interface</P></H1>
+<P>Before you start important things with the HTTP server, understand
+that <EM>otg-disk</EM> HTTP server uses only plain HTTP.  That is, all data
+is transmitted in clear-text and open to anyone else who is on the
+same network.  When running the server on an untrusted network you
+need to</P>
+<UL>
+<LI>either switch to https,</LI>
+<LI>or limit access to the Raspberry's USB (on-the-go aka OTG) network</LI>
+</UL>
+<P>to secure your data.</P>
+<H3><P>Script Handler</P></H3>
+<P><A HREF="script-handler.cgi" TARGET="_blank" TITLE="script-handler.cgi"><EM>script-handler.cgi</EM></A> reads definitions for HTML input forms from
+script files (shell, <EM>python</EM>, <EM>gawk</EM>, ...).  When the form is
+submitted, the script is executed the input data is exported as shell
+environment variables, the script is is executed and the script's
+output is sent to the client.</P>
+<P><EM>script-handler.cgi</EM> has its own <A HREF="script-handler.html" TARGET="_blank" TITLE="Script Handler">documentation</A>.  See there for more
+information.  Here is a simple example.</P>
+<PRE CLASS="code">#!/bin/sh
+#
+
+#
+# :title Shutdown
+# :name System ausschalten oder booten
+#
+# :label reboot Operation:
+# :radio reboot --checked shutdown Shutdown
+# :radio reboot reboot Reboot computer
+#
+
+M=-h
+if [ "$reboot" = "reboot" ]; then
+    M=-r
+    echo rebooting ...
+else
+    echo shutting down ...
+fi
+
+sudo shutdown $M now
+echo ok.</PRE>
+<P>The script reboots or shuts down the Raspberry and
+<EM>script-handler.cgi</EM> creates the input form to collect the parameter.
+The script can be in any scripting language and the only requirement
+is that it supports <CODE>#</CODE>-sytle comments because <EM>script-handler.cgi</EM>
+scans them to get the form definitions.  If you really need to start a
+non-script create a wrapping shell script.</P>
+<H3><P>File Receiver</P></H3>
+<P><A HREF="file-receiver.cgi" TARGET="_blank" TITLE="file-receiver.cgi"><EM>file-receiver.cgi</EM></A> is the other script that might be useful.  It
+allows users to upload files with POST requests to an area of the web
+server.  It is used by opening its URL, e.g.</P>
+<PRE CLASS="code">http://raspberry:2080/cgi-bin/file-receiver.cgi</PRE>
+<P>The location where the script stores the files is configured inside
+the script with the <CODE>_base_address</CODE> variable.  It must be appended to
+the URL when uploading data but <EM>file-receiver.cgi</EM> adds it for GET
+requests.</P>
+<P>The CGI script lists the files in the accessed directory and a simple
+form to upload files is added to the end of if.  Pressing the "Choose
+Files" button lets the user pick files from his computer, which are
+stored in the directory when submitted.</P>
+<H3><P>Using the scripts</P></H3>
+<P>The CGI scripts can be used with any web client.  They are however made
+for mobile phones.  I found <A HREF="https://play.google.com/store/apps/details?id=ch.rmy.android.http_shortcuts&amp;gl=US" TARGET="_blank" TITLE="HTTP Request Shortcuts">HTTP Request Shortcuts</A> in Google's
+Android app store.  It is a handy tool to send preconfigured HTTP
+requests to a server.  E.g.</P>
+<UL>
+<LI>a POST request,</LI>
+<LI>to a suitable URL, e.g. <EM>/cgi-bin/file-receiver.cgi/uploads/</EM>,</LI>
+<LI>with the request body type being form-data, and</LI>
+<LI>a file input parameter</LI>
+</UL>
+<P>creates a "Send to" receiver on the mobile, which can send multiple
+files to the configured location in a single request.  That's an easy
+way to put files on a server without using a cloud service.</P>
+</BODY>
+<!-- source: text/markdown
+
+ _otg-disk_ can run an HTTP server.  This document describes two
+ possible applications, which support using the _otg-disk_ Raspberry
+ with mobile phones: file uploads and system control.  (Both scripts
+ can be used without _otg-disk_).
+
+
+# HTTP Interface
+
+Before you start important things with the HTTP server, understand
+that _otg-disk_ HTTP server uses only plain HTTP.  That is, all data
+is transmitted in clear-text and open to anyone else who is on the
+same network.  When running the server on an untrusted network you
+need to
+
+ - either switch to https,
+ - or limit access to the Raspberry's USB (on-the-go aka OTG) network
+
+to secure your data.
+
+
+### Script Handler
+
+[_script-handler.cgi_][1] reads definitions for HTML input forms from
+script files (shell, _python_, _gawk_, ...).  When the form is
+submitted, the script is executed the input data is exported as shell
+environment variables, the script is is executed and the script's
+output is sent to the client.
+
+_script-handler.cgi_ has its own [documentation][2].  See there for more
+information.  Here is a simple example.
+
+```
+    #!/bin/sh
+    #
+    
+    #
+    # :title Shutdown
+    # :name System ausschalten oder booten
+    #
+    # :label reboot Operation:
+    # :radio reboot --checked shutdown Shutdown
+    # :radio reboot reboot Reboot computer
+    #
+    
+    M=-h
+    if [ "$reboot" = "reboot" ]; then
+        M=-r
+        echo rebooting ...
+    else
+        echo shutting down ...
+    fi
+    
+    sudo shutdown $M now
+    echo ok.
+```
+
+The script reboots or shuts down the Raspberry and
+_script-handler.cgi_ creates the input form to collect the parameter.
+The script can be in any scripting language and the only requirement
+is that it supports `#`-sytle comments because _script-handler.cgi_
+scans them to get the form definitions.  If you really need to start a
+non-script create a wrapping shell script.
+
+
+### File Receiver
+
+[_file-receiver.cgi_][3] is the other script that might be useful.  It
+allows users to upload files with POST requests to an area of the web
+server.  It is used by opening its URL, e.g.
+
+    http://raspberry:2080/cgi-bin/file-receiver.cgi
+
+The location where the script stores the files is configured inside
+the script with the `_base_address` variable.  It must be appended to
+the URL when uploading data but _file-receiver.cgi_ adds it for GET
+requests.
+
+The CGI script lists the files in the accessed directory and a simple
+form to upload files is added to the end of if.  Pressing the "Choose
+Files" button lets the user pick files from his computer, which are
+stored in the directory when submitted.
+
+
+### Using the scripts
+
+The CGI scripts can be used with any web client.  They are however made
+for mobile phones.  I found [HTTP Request Shortcuts][4] in Google's
+Android app store.  It is a handy tool to send preconfigured HTTP
+requests to a server.  E.g.
+
+ - a POST request,
+ - to a suitable URL, e.g. _/cgi-bin/file-receiver.cgi/uploads/_,
+ - with the request body type being form-data, and
+ - a file input parameter
+
+creates a "Send to" receiver on the mobile, which can send multiple
+files to the configured location in a single request.  That's an easy
+way to put files on a server without using a cloud service.
+
+
+
+ [1]: script-handler.cgi (script-handler.cgi)
+ [2]: script-handler.md (Script Handler)
+ [3]: file-receiver.cgi (file-receiver.cgi)
+ [4]: https://play.google.com/store/apps/details?id=ch.rmy.android.http_shortcuts&gl=US (HTTP Request Shortcuts)
+
+
+
+-->
+</HTML>

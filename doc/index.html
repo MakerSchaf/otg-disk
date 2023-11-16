@@ -1,0 +1,267 @@
+<HTML>
+<HEAD>
+  <!-- software: muc 1.1.2 -->
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <TITLE>otg-disk</TITLE>
+  <LINK HREF="index.html" REL="home">
+<STYLE TYPE="text/css">
+    A, A:visited { text-decoration: none; color: blue; }
+    A:hover { color: #00FF00; }
+    BODY { padding: 1em; margin: auto; max-width: 700; }
+    BODY, TD, TH { font-size: 11pt; line-height: 1.5;
+        font-family: Verdana, Georgia, Helvetica, Arial, sans-serif;
+        }
+    PRE.code { margin-left: 2em; padding: .5em; background: #F0F0F0; color: #0000FF;
+	 line-height: 1.2;
+        font-size: 90%; overflow-x: auto; overflow-y: auto;
+        font-family: "courier new", monospace;
+        border: 1px solid black; border-radius: 0px; border: 1px solid grey;
+        }
+    CODE { font-family: "courier new", monospace; color: #0000FF;
+        font-size: 90%; padding: .2em .4em;
+        background: #F0F0F0; border-radius: 6px;
+        vertical-align: middle;
+        }
+    TABLE { margin-left: 2em; border-spacing: 0px; }
+    TD, TH { border: 1px dotted gray; padding-left: .5em; padding-right: .5em; }
+    BLOCKQUOTE { margin-left: 2em; border-left: 2px solid blue; padding-left: 1em; }
+    DIV.navigator { padding: 2px; font-size: 80%; background: #F0FFF0; border-bottom: 1px solid blue; }
+    DIV.lastmod { font-size: 80%; }
+    DIV.introduction { font-size: 90%; margin: 0 2em 0 2em; }
+</STYLE>
+<LINK HREF="styles.css" REL="stylesheet" TYPE="text/css">
+<STYLE TYPE="text/css">
+DIV.navigator { background: #F0FFF0; }
+</STYLE>
+<SCRIPT SRC="keyboard.js" TYPE="text/javascript"></SCRIPT>
+</HEAD>
+<BODY>
+<NAV><DIV ALIGN="RIGHT" CLASS="navigator">Home
+| <A HREF="contents.html" REL="Contents">Contents</A>
+| <A HREF="safety-instructions.html" REL="first">F</A>PN<A HREF="reference.html" REL="last">L</A></DIV></NAV>
+<DIV ALIGN="RIGHT" CLASS="lastmod">Last modified: 2023-11-16 09:23</DIV>
+<H1><P>otg-disk</P></H1>
+<P><EM>otg-disk</EM> is a combination of shell and <EM>gawk</EM> scripts to run a kind
+of ad-hoc <EM>samba</EM> file-server.  Ok, a file-server?  How exciting can
+that be?  First of all, <EM>otg-disk</EM> implements some unusual features:</P>
+<UL>
+<LI>By default, a public password-free file share exists to allow
+ easy file exchange on the network.  Think of a networked USB
+ drive.  This has important security implications so make sure to
+ read the <A HREF="safety-instructions.html" TITLE="Safety Instructions">Safety Instructions</A>.  Password protected shares are
+ possible as well.</LI>
+<LI>Optionally, <EM>minidlnad</EM> can stream files (from the shares) to
+ DLNA clients.</LI>
+<LI>Deleting files (on a file share) controls the system.  E.g.,
+ shutdown the Raspberry or start an additional service by deleting
+ the respectve control file.  In other words: No <EM>ssh</EM> or <EM>vnc</EM>
+ access is required.</LI>
+<LI><EM>otg-disk</EM> can run a local W-Lan hotspot on request or if there's
+ no network connection available.  (For your next Lan party,
+ workgroup meeting or simply when you run the Raspberry outside for
+ an experiment.)</LI>
+<LI>If <EM>dwc2</EM> is enabled (in <EM>/boot/config.txt</EM>) <EM>otg-disk</EM> can
+ configure OTG network, e.g. to connect your Raspberry Zero (with
+ no W-Lan chip).</LI>
+</UL>
+<P>Second, tries to avoid changes to the installed system wherever it can.</P>
+<UL>
+<LI><EM>otg-disk</EM> does not need to be installed.  Downloading the script
+ is sufficient.  And since the script is a container for several
+ <EM>gawk</EM> scripts there is also nothing to unzip.  Additional
+ software packages need to be installed but they are pretty
+ common and available through standard package feeds.</LI>
+<LI>No persistent configuration files.  <EM>otg-disk</EM> is configured with
+ shell variables in the script itself and this information is used
+ to create e.g. a <EM>smb.conf</EM> on-the-fly into a temporary
+ directory.</LI>
+<LI>Run as system service or not.  You can run the script ad-hoc
+ (from the command line) when you need it or as a system service
+ and <EM>otg-disk</EM> de/installs itself.  Another optional file for
+ system installation is for bash completion.  But again, you can
+ activate that on demand.</LI>
+</UL>
+<P>So none of these functions require changes to the system.  Everything
+is configured in the <EM>otg-disk</EM> script.  If concurring services are
+already running (e.g. a regular <EM>samba</EM> server) they are terminated
+when <EM>otg-disk</EM> starts and restarted when it ends.  The thing is
+really to have the server ad-hoc, when it is needed - only.</P>
+<H3><P>Documentation</P></H3>
+<DL>
+<DT><A HREF="safety-instructions.html" TITLE="Safety Instructions">Safety Instructions</A></DT>
+<DD><EM>otg-disk</EM> makes it simple to run a file-server with or without
+password protection.  I hope / think the script lowers the bar to
+run and operate a server significantly.  Even unexperienced users
+should be able to install and use the script.  However, the less
+you know about computers, servers and security the less you know
+about possible pitfalls and the more you want to read the safety
+instructions, which list some "do not to this".</DD>
+<DT><A HREF="installation.html" TITLE="Installation">Installing <EM>otg-disk</EM></A></DT>
+<DD>This documents guides you through the installation of additional
+software packages (<EM>otg-disk</EM> itself needs no installation).  All of
+them are pretty standard and you might have them already on your
+system.  Ways to configure <EM>otg-disk</EM> are also here.</DD>
+<DT><A HREF="easy-mode.html" TITLE="Easy Mode">Easy Mode</A></DT>
+<DD>The document explains what <EM>otg-disk</EM> can do without further tweaks
+just by adjusting its configuration: running the "networked USB
+drive", stream to DLNA clients and start a local W-Lan hotspot.
+There's no scripting required, only configuration, either by editing
+variables in the script or running the <CODE>--configure</CODE> command, see
+<A HREF="installation.html" TITLE="Installation">Installing <EM>otg-disk</EM></A>.</DD>
+<DT><A HREF="http-interface.html" TITLE="HTTP Interface">HTTP Interface</A></DT>
+<DD><EM>otg-disk</EM> uses <EM>busybox</EM> to run a simple HTTP server.  This
+document describes two CGI scripts you might want to add to
+<EM>otg-disk</EM>.  The first script implements file uploads by HTTP to
+an arbitrary space of your server and the second implements a very
+simple way to start operations by HTTP.  (Think of running the
+Raspberry off-site with its own W-Lan an no computer but only your
+mobile around.)  This part requires download additional files into
+the HTTP server's <EM>cgi-bin</EM> directory and adjusting the scripts
+for configuration.</DD>
+<DT><A HREF="usb-disks.html" TITLE="USB Disks">USB Disks</A></DT>
+<DD><EM>otg-disk</EM> can work with USB disks.  In contrast to the things
+before, this needs some shell scripting and the requirements are
+explained in this document.</DD>
+<DT><A HREF="reference.html" TITLE="otg-disk Reference">Reference</A></DT>
+<DD>Finally, there's the reference document describing configuration
+options, <EM>otg-disk</EM> commands and the command line user interface.</DD>
+</DL>
+<H3><P>Downloads</P></H3>
+<DL>
+<DT><A HREF="otg-disk" TARGET="_blank" TITLE="_otg-disk_"><EM>otg-disk</EM></A></DT>
+<DD>The script itself.</DD>
+<DT><A HREF="switch-dwc2" TARGET="_blank" TITLE="_switch-dwc2_"><EM>switch-dwc2</EM></A></DT>
+<DD>A helper script to de/activate the <EM>dwc2</EM> overlay for OTG network
+in <EM>/boot/config.txt</EM> from the command line.  This script can be
+useful when working with USB devices.</DD>
+</DL>
+</BODY>
+<!-- source: text/markdown
+
+# otg-disk
+
+_otg-disk_ is a combination of shell and _gawk_ scripts to run a kind
+of ad-hoc _samba_ file-server.  Ok, a file-server?  How exciting can
+that be?  First of all, _otg-disk_ implements some unusual features:
+
+ - By default, a public password-free file share exists to allow
+   easy file exchange on the network.  Think of a networked USB
+   drive.  This has important security implications so make sure to
+   read the [Safety Instructions][1].  Password protected shares are
+   possible as well.
+
+ - Optionally, _minidlnad_ can stream files (from the shares) to
+   DLNA clients.
+
+ - Deleting files (on a file share) controls the system.  E.g.,
+   shutdown the Raspberry or start an additional service by deleting
+   the respectve control file.  In other words: No _ssh_ or _vnc_
+   access is required.
+
+ - _otg-disk_ can run a local W-Lan hotspot on request or if there's
+   no network connection available.  (For your next Lan party,
+   workgroup meeting or simply when you run the Raspberry outside for
+   an experiment.)
+
+ - If _dwc2_ is enabled (in _/boot/config.txt_) _otg-disk_ can
+   configure OTG network, e.g. to connect your Raspberry Zero (with
+   no W-Lan chip).
+
+Second, tries to avoid changes to the installed system wherever it can.
+
+ - _otg-disk_ does not need to be installed.  Downloading the script
+   is sufficient.  And since the script is a container for several
+   _gawk_ scripts there is also nothing to unzip.  Additional
+   software packages need to be installed but they are pretty
+   common and available through standard package feeds.
+
+ - No persistent configuration files.  _otg-disk_ is configured with
+   shell variables in the script itself and this information is used
+   to create e.g. a _smb.conf_ on-the-fly into a temporary
+   directory.
+
+ - Run as system service or not.  You can run the script ad-hoc
+   (from the command line) when you need it or as a system service
+   and _otg-disk_ de/installs itself.  Another optional file for
+   system installation is for bash completion.  But again, you can
+   activate that on demand.
+
+So none of these functions require changes to the system.  Everything
+is configured in the _otg-disk_ script.  If concurring services are
+already running (e.g. a regular _samba_ server) they are terminated
+when _otg-disk_ starts and restarted when it ends.  The thing is
+really to have the server ad-hoc, when it is needed - only.
+
+
+### Documentation
+
+ : [Safety Instructions][1]
+  _otg-disk_ makes it simple to run a file-server with or without
+  password protection.  I hope / think the script lowers the bar to
+  run and operate a server significantly.  Even unexperienced users
+  should be able to install and use the script.  However, the less
+  you know about computers, servers and security the less you know
+  about possible pitfalls and the more you want to read the safety
+  instructions, which list some "do not to this".
+
+ : [Installing _otg-disk_][2]
+  This documents guides you through the installation of additional
+  software packages (_otg-disk_ itself needs no installation).  All of
+  them are pretty standard and you might have them already on your
+  system.  Ways to configure _otg-disk_ are also here.
+
+ : [Easy Mode][8]
+  The document explains what _otg-disk_ can do without further tweaks
+  just by adjusting its configuration: running the "networked USB
+  drive", stream to DLNA clients and start a local W-Lan hotspot.
+  There's no scripting required, only configuration, either by editing
+  variables in the script or running the `--configure` command, see
+  [Installing _otg-disk_][2].
+
+ : [HTTP Interface][3]
+  _otg-disk_ uses _busybox_ to run a simple HTTP server.  This
+  document describes two CGI scripts you might want to add to
+  _otg-disk_.  The first script implements file uploads by HTTP to
+  an arbitrary space of your server and the second implements a very
+  simple way to start operations by HTTP.  (Think of running the
+  Raspberry off-site with its own W-Lan an no computer but only your
+  mobile around.)  This part requires download additional files into
+  the HTTP server's _cgi-bin_ directory and adjusting the scripts
+  for configuration.
+
+ : [USB Disks][4]
+  _otg-disk_ can work with USB disks.  In contrast to the things
+  before, this needs some shell scripting and the requirements are
+  explained in this document.
+
+ : [Reference][5]
+  Finally, there's the reference document describing configuration
+  options, _otg-disk_ commands and the command line user interface.
+
+
+### Downloads
+
+ : [_otg-disk_][6]
+  The script itself.
+
+ : [_switch-dwc2_][7]
+  A helper script to de/activate the _dwc2_ overlay for OTG network
+  in _/boot/config.txt_ from the command line.  This script can be
+  useful when working with USB devices.
+
+
+ [1]: safety-instructions.md "Safety Instructions"
+ [2]: installation.md "Installation"
+ [8]: easy-mode.md "Easy Mode"
+ [3]: http-interface.md "HTTP Interface"
+ [4]: usb-disks.md (USB Disks)
+ [5]: reference.md (otg-disk Reference)
+ [6]: otg-disk (_otg-disk_)
+ [7]: switch-dwc2 (_switch-dwc2_)
+
+
+ 
+
+-->
+</HTML>

@@ -1,0 +1,297 @@
+<HTML>
+<HEAD>
+  <!-- software: muc 1.1.2 -->
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <TITLE>Safety Instructions</TITLE>
+  <LINK HREF="index.html" REL="home">
+<STYLE TYPE="text/css">
+    A, A:visited { text-decoration: none; color: blue; }
+    A:hover { color: #00FF00; }
+    BODY { padding: 1em; margin: auto; max-width: 700; }
+    BODY, TD, TH { font-size: 11pt; line-height: 1.5;
+        font-family: Verdana, Georgia, Helvetica, Arial, sans-serif;
+        }
+    PRE.code { margin-left: 2em; padding: .5em; background: #F0F0F0; color: #0000FF;
+	 line-height: 1.2;
+        font-size: 90%; overflow-x: auto; overflow-y: auto;
+        font-family: "courier new", monospace;
+        border: 1px solid black; border-radius: 0px; border: 1px solid grey;
+        }
+    CODE { font-family: "courier new", monospace; color: #0000FF;
+        font-size: 90%; padding: .2em .4em;
+        background: #F0F0F0; border-radius: 6px;
+        vertical-align: middle;
+        }
+    TABLE { margin-left: 2em; border-spacing: 0px; }
+    TD, TH { border: 1px dotted gray; padding-left: .5em; padding-right: .5em; }
+    BLOCKQUOTE { margin-left: 2em; border-left: 2px solid blue; padding-left: 1em; }
+    DIV.navigator { padding: 2px; font-size: 80%; background: #F0FFF0; border-bottom: 1px solid blue; }
+    DIV.lastmod { font-size: 80%; }
+    DIV.introduction { font-size: 90%; margin: 0 2em 0 2em; }
+</STYLE>
+<LINK HREF="styles.css" REL="stylesheet" TYPE="text/css">
+<STYLE TYPE="text/css">
+DIV.navigator { background: #F0FFF0; }
+</STYLE>
+<SCRIPT SRC="keyboard.js" TYPE="text/javascript"></SCRIPT>
+</HEAD>
+<BODY>
+<NAV><DIV ALIGN="RIGHT" CLASS="navigator"><A HREF="index.html" REL="Home">Home</A>
+| <A HREF="contents.html" REL="Contents">Contents</A>
+| FP<A HREF="installation.html" REL="next">N</A><A HREF="reference.html" REL="last">L</A></DIV></NAV>
+<DIV ALIGN="RIGHT" CLASS="lastmod">Last modified: 2023-11-16 09:03</DIV>
+<P>Too often we read about the interesting features from a new
+ software ("Do this, try that.") without being told about the
+ "don't-s", the possible risks ("You didn't know that?").  This
+ document tries to tell what not to do with <EM>otg-disk</EM>.</P>
+<P>I'm pretty sure there are more things to avoid but those below
+ are the ones that come directly into my mind.  Let me know if
+ you see more easy misconfigurations.</P>
+<H1><P>Safety Instructions</P></H1>
+<P><EM>otg-disk</EM> was not made with security in mind (and the whole
+Raspberry setup is not) and it starts with the script itself.</P>
+<H3><P>Script file permissions</P></H3>
+<P>The <EM>otg-disk</EM> script contains password in clear-text, e.g. the
+W-Lan or <EM>samba</EM> share passwords.</P>
+<P>This means that - as long you don't take extra care about the
+script's read permissions - everyone who can access your Raspberry
+can read the passwords too.  More generally speaking: <EM>otg-disk</EM> is
+made for Raspberries that have only you (or really trusted other
+persons) as local user.</P>
+<UL>
+<LI><STRONG>Share you Raspberry (granting them local accounts) only with
+ trusted others.</STRONG></LI>
+</UL>
+<P>Of course, this doesn't matter in situations where the passwords are
+shared among a group of users anyway.</P>
+<H3><P>Physical device security</P></H3>
+<P>Even if you have granted local accounts only to trusted persons (and
+all use strong passwords etc.) this can be easily bypassed if one
+gets physical access to the Raspberry.  All that is needed is
+putting the SD-card into a card reader in another computer.</P>
+<H3><P>Public file share</P></H3>
+<P><EM>otg-disk</EM> configures a public <EM>samba</EM> file share that is read-write
+open to all users that have access to the network (W-Lan or LAN).
+No username/password is required (anonymous logins work) to connect
+and the file server operates with the configured user's (most of the
+time that is <STRONG>your</STRONG>) file permissions.  That is, the file server
+grants happily access to your files, allowing other to read, modify
+or delete them.</P>
+<UL>
+<LI><STRONG>Don't run the public file share if untrusted persons can connect
+ to the network (wired or wireless).</STRONG></LI>
+</UL>
+<P>The public share itself can be turned off by unsetting either its
+name or directory (i.e. assign empty values).  You might also
+configure the option <CODE>PUBLIC_SHARE_OPT="read only = yes"</CODE> to deny
+write access.</P>
+<H3><P>Private file share</P></H3>
+<P>If a private file share is configured it is protected with a
+password.  However, this protection is only as good as the
+protection of the <EM>otg-disk</EM> script file because it contains the
+password in clear-text (<CODE>PRIVATE_SHARE_PASSWORD</CODE> variable).</P>
+<H3><P>Other file shares</P></H3>
+<P>More file shares can be created from the <CODE>OTHER_SHARES</CODE> variable.
+Access can be assigned to particular users and their <EM>samba</EM> (!)
+accounts can be created by adding the user's password to the
+username in (again:) clear-text.</P>
+<PRE CLASS="code">OTHER_SHARES="media:/media:valid users = $USER, bob/7224x"</PRE>
+<P>Would create a <EM>samba</EM> account for user <CODE>bob</CODE> with the password
+<CODE>7224x</CODE>.  However, to get access to the share the local system
+(Raspberry) user <CODE>bob</CODE> must be created too but <CODE>bob</CODE> doesn't need to
+be able to login to the Raspberry.  Here are two ways to prevent
+users with a valid system account to login:</P>
+<UL>
+<LI>Don't assign a Linux password to <EM>samba</EM>-only users (and don't give
+ them access to their <CODE>$HOME</CODE> directory because they can put an
+ <EM>ssh</EM>-key there to get system access without a password.)</LI>
+<LI>Assign <EM>/bin/true</EM> as their login shell: <CODE>sudo useradd -s
+ /bin/true -d /non-existant bob</CODE>.  Even better: use <EM>otg-disk</EM>'s
+ <CODE>--create-share-account</CODE> operation.</LI>
+</UL>
+<H3><P>HTTP server</P></H3>
+<P>The HTTP server is configured for http only.  https (the encrypted
+and safe version of http) would require to</P>
+<UL>
+<LI>get a server certificate from an official vendor (self-signed
+ certs are not secure) with timely renewal,</LI>
+<LI>that you enter the server's key password when the server boots,
+ or enter it in plain-text in a file.</LI>
+</UL>
+<P>There is an alternative by setting up a local certificate authority
+with <A HREF="https://github.com/OpenVPN/easy-rsa" TARGET="_blank" TITLE="easy-rsa on GitHub">easy-rsa</A> but this is beyond <EM>otg-disk</EM>'s scope.</P>
+<UL>
+<LI>You should not transmit password or other confidential
+ information using http if you are connected to an untrusted
+ network or untrusted persons have access it.</LI>
+</UL>
+<P>The only really secure network connection would be on the USB
+interface if you have on-the-go (OTG) network active.  This is as
+secure as your OTG-host.</P>
+<H3><P>Summary</P></H3>
+<P>To summarize what was said above, the important <EM>don't-s</EM> are this:</P>
+<OL>
+<LI>Protect your Raspberry against unauthorized physical access.</LI>
+<LI>Don't connect the <EM>otg-disk</EM> Raspberry to an untrusted network
+ or network where untrusted (or unknown) others can connect.</LI>
+</OL>
+<P>Notice that the Internet is just a very large untrusted network.  Do
+not connect <EM>otg-disk</EM> there unless you really understand what you
+are doing.</P>
+<P>Here are the <EM>do-s</EM>:</P>
+<OL>
+<LI>Use it on your own and private network or in situations where you
+ share / exchange files with known and trusted others.</LI>
+<LI>Update the Raspberry software often, e.g. use
+ <CODE>./otg-disk --apt-system-update</CODE> for it.  Do this even if you
+ connect the Raspberry only to trusted and controlled networks.</LI>
+</OL>
+</BODY>
+<!-- source: text/markdown
+
+ Too often we read about the interesting features from a new
+ software ("Do this, try that.") without being told about the
+ "don't-s", the possible risks ("You didn't know that?").  This
+ document tries to tell what not to do with _otg-disk_.
+
+ I'm pretty sure there are more things to avoid but those below
+ are the ones that come directly into my mind.  Let me know if
+ you see more easy misconfigurations.
+
+
+# Safety Instructions
+
+_otg-disk_ was not made with security in mind (and the whole 
+Raspberry setup is not) and it starts with the script itself.
+
+
+### Script file permissions
+
+The _otg-disk_ script contains password in clear-text, e.g. the
+W-Lan or _samba_ share passwords.
+
+This means that - as long you don't take extra care about the
+script's read permissions - everyone who can access your Raspberry
+can read the passwords too.  More generally speaking: _otg-disk_ is
+made for Raspberries that have only you (or really trusted other
+persons) as local user.
+
+ - **Share you Raspberry (granting them local accounts) only with
+   trusted others.**
+
+Of course, this doesn't matter in situations where the passwords are
+shared among a group of users anyway.
+
+
+### Physical device security
+
+Even if you have granted local accounts only to trusted persons (and
+all use strong passwords etc.) this can be easily bypassed if one
+gets physical access to the Raspberry.  All that is needed is
+putting the SD-card into a card reader in another computer.
+
+
+### Public file share
+
+_otg-disk_ configures a public _samba_ file share that is read-write
+open to all users that have access to the network (W-Lan or LAN).
+No username/password is required (anonymous logins work) to connect
+and the file server operates with the configured user's (most of the
+time that is **your**) file permissions.  That is, the file server
+grants happily access to your files, allowing other to read, modify
+or delete them.
+
+ - **Don't run the public file share if untrusted persons can connect
+   to the network (wired or wireless).**
+
+The public share itself can be turned off by unsetting either its
+name or directory (i.e. assign empty values).  You might also
+configure the option `PUBLIC_SHARE_OPT="read only = yes"` to deny
+write access.
+
+
+### Private file share
+
+If a private file share is configured it is protected with a
+password.  However, this protection is only as good as the
+protection of the _otg-disk_ script file because it contains the
+password in clear-text (`PRIVATE_SHARE_PASSWORD` variable).
+
+
+### Other file shares
+
+More file shares can be created from the `OTHER_SHARES` variable.
+Access can be assigned to particular users and their _samba_ (!)
+accounts can be created by adding the user's password to the
+username in (again:) clear-text.
+
+    OTHER_SHARES="media:/media:valid users = $USER, bob/7224x"
+
+Would create a _samba_ account for user `bob` with the password
+`7224x`.  However, to get access to the share the local system
+(Raspberry) user `bob` must be created too but `bob` doesn't need to
+be able to login to the Raspberry.  Here are two ways to prevent
+users with a valid system account to login:
+
+ - Don't assign a Linux password to _samba_-only users (and don't give
+   them access to their `$HOME` directory because they can put an
+   _ssh_-key there to get system access without a password.)
+
+ - Assign _/bin/true_ as their login shell: `sudo useradd -s
+   /bin/true -d /non-existant bob`.  Even better: use _otg-disk_'s
+   `--create-share-account` operation.
+
+
+### HTTP server
+
+The HTTP server is configured for http only.  https (the encrypted
+and safe version of http) would require to
+
+ - get a server certificate from an official vendor (self-signed
+   certs are not secure) with timely renewal,
+ - that you enter the server's key password when the server boots,
+   or enter it in plain-text in a file.
+
+There is an alternative by setting up a local certificate authority
+with [easy-rsa][1] but this is beyond _otg-disk_'s scope.
+
+ - You should not transmit password or other confidential
+   information using http if you are connected to an untrusted
+   network or untrusted persons have access it.
+
+The only really secure network connection would be on the USB
+interface if you have on-the-go (OTG) network active.  This is as
+secure as your OTG-host.
+
+
+### Summary
+
+To summarize what was said above, the important _don't-s_ are this:
+
+ 1. Protect your Raspberry against unauthorized physical access.
+
+ 2. Don't connect the _otg-disk_ Raspberry to an untrusted network
+    or network where untrusted (or unknown) others can connect.
+
+Notice that the Internet is just a very large untrusted network.  Do
+not connect _otg-disk_ there unless you really understand what you
+are doing.
+
+Here are the _do-s_:
+
+ 1. Use it on your own and private network or in situations where you
+    share / exchange files with known and trusted others.
+
+ 2. Update the Raspberry software often, e.g. use
+    `./otg-disk --apt-system-update` for it.  Do this even if you
+    connect the Raspberry only to trusted and controlled networks.
+
+
+
+ [1]: https://github.com/OpenVPN/easy-rsa (easy-rsa on GitHub)
+
+
+
+-->
+</HTML>

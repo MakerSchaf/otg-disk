@@ -1,0 +1,2662 @@
+#!/bin/sh
+#
+
+
+#
+# otg-disk is an all-in-one shell script to start a samba server
+# with a publicly accessible share.  It can be run from the command
+# line or installed as systemd service.
+#
+#    otg-disk --help
+#
+# lists the available commands.
+#
+
+
+
+
+THIS=$(realpath "$0")
+NAME=$(basename "$0" .sh)
+VERSION=1.3.2
+
+# Remove this when sys-monitor is integrated.
+cd "$(dirname "$0")"  ||  exit 1
+
+
+# Additional script are here.
+BINDIR=$(dirname $0)
+
+RESTART_SIGNAL="30"
+REOPENLOG_SIGNAL="29"
+
+
+
+# -------------------------------------------------------------------
+# Configuration variables.
+
+# We run as this user.  Recommendation: don't compute the name
+# but simply enter it here.
+USER="$USER"
+if [ "$USER" = "" ]; then
+    USER=$(id -u -n)
+fi
+
+# -- config starts -- Don't change this line.
+
+# MAC address in case g_ether is loaded here.
+OTG_DEV_ADDR="aa:bb:cc:dd:ee:f1"
+
+
+# Name and path of public samba share.
+PUBLIC_SHARE_NAME="pub"
+export PUBLIC_SHARE_PATH="/home/$USER/tmp/otg-disk/pub"
+PUBLIC_SHARE_OPT="read only = no"
+
+# Configuration of password protected share.
+PRIVATE_SHARE_NAME=""
+export PRIVATE_SHARE_PATH="/home/$USER/tmp/otg-disk"
+PRIVATE_SHARE_USERNAME="$USER"
+PRIVATE_SHARE_PASSWORD="PutYourPasswordHere"
+PRIVATE_SHARE_OPT=""
+
+# More shares can be defined here.  User specified with
+# `valid users = ...` are added to smbd's password file but
+# must have a system account (with no login permission) too.
+##OTHER_SHARES="music:$HOME/music: valid users = bob/1234: ready only = yes"
+OTHER_SHARES=""
+
+
+# This is the location of the control directory.
+SYSCTRL="$PUBLIC_SHARE_PATH/sys"
+
+# The SYS directory gives control to these services.
+SERVICE_LIST="vnc httpd minidlna"
+
+# Start these services with otg-disk.
+START_SERVICES="minidlna"
+
+# Set this path to start minidlna.
+MEDIA_PATH="$PUBLIC_SHARE_PATH"
+
+
+# Parameters for busybox httpd.
+HTTP_PORT="2080"
+HTTP_DOCUMENT_ROOT="$PUBLIC_SHARE_PATH"
+
+
+# Hotspot configuration.
+WLAN_COUNTRY_CODE="XX"
+WLAN_SSID="$(hostname)-ap"
+WLAN_PASSWD="SomeSecretPassword"
+
+# Access point network configuration
+AP_IFC="wlan0"
+AP_IP_ADDR="192.168.1.1"
+AP_NETWORK="192.168.1.0"
+AP_NETMASK="255.255.255.0"
+AP_DHCP_DEF="192.168.1.11,192.168.1.55,255.255.255.0,24h"
+
+
+# The script can check on startup if any network is available
+# and start the configured access point if not.
+AP_AUTOSTART=no
+
+# Wait that much seconds before testing for networks.
+AP_AUTOSTART_DELAY=30
+
+# If the access point is started, the busybox http server
+# can be started too.
+AP_AUTOSTART_HTTP=no
+
+
+
+# Logs are stored here.
+LOGDIR="$PUBLIC_SHARE_PATH/logs"
+
+# A list of extension scripts.
+EXTENSIONS=""
+
+# Systems services to check for stopping / restarting.
+SYSTEM_SERVICES="minidlnad"
+
+# Enable stopping the service from SYSDIR.
+OTG_STOP_FILE="yes"
+
+# Debugging issues with the script?  Setting this to `yes` disables
+# the systemd service on startup.
+OTG_FAILSAFE="no"
+
+
+# Internal used.
+
+# RUN is our temporary runtime directory.
+RUN="/run/$NAME"
+
+# These services are added to above's SYSTEM_SERVICES.
+OTG_STOP_SERVICES="smbd nmbd"
+
+# Location of dynamic smb.conf and smbd's logfile.
+SMB_CONF="$RUN/smb.conf"
+SMB_LOG="$RUN/smb.log"
+
+# Set these permission on the share directories to make smbd
+# allow writing files.
+DIR_PERM=775
+
+# -- config ends -- Don't change this line.
+
+# sys-monitor writes some log messages.
+export MONITOR_LOG=yes
+
+# The phat-controller handles buttons from the Cytron maker phat
+# and converts that into file operations.  You don't have that
+# script.
+PHAT_CONTROLLER="$BINDIR/phat-controller"
+
+# otg-disk's pid is stored here.
+MYPID_FILE="$RUN/$NAME.pid"
+
+
+#
+# -------------------------------------------------------------------
+
+
+
+# -------------------------------------------------------------------
+# Some functions.
+
+
+usage() {
+	echo "$NAME $VERSION
+
+  Usage: otg-disk <operation>
+
+Valid operations operations are:
+
+  System service
+    --install		install otg-disk as system service.
+    --install-otg	install otg-disk as system service but start the
+			service only if OTG network is active.
+    --uninstall		uninstall system service.
+
+  Software installation
+    --apt-check		check if required packages are installed.
+    --apt-get <pkg> ... - <service> ...    install the listed Debian
+			packages and stop plus disable the listed
+			services.
+    --apt-system-update	update the system software.
+
+  System Configuration
+    --sys-config	print commands to configure the Raspberry.
+    --mkdirs		print commands to create required directories.
+
+    --create-share-account <name> <directory>    create a system user
+			with the given username and home directory and
+			logins disabled.
+
+  Service control
+    --disable		disable the otg-disk systemd service.
+    --enable		reenable the service, e.g. when running in
+    			failsafe mode.
+    --start		start otg-disk.
+    --status		check if otg-disk is running.
+    --stop		terminate otg-disk.
+    --restart		restart otg-disk.
+    --reopen-log	close the current logfile and open a new one.
+    --version		print otg-disk's version.
+
+  Configuation
+    --show-config [<pattern> ...]    show otg-disk's effective
+    			configuration values (without environment
+			variables).
+    --configure --<var> <val> ...    change otg-disk's configuration.
+    			The --configure operation has its own help
+			page.  Run without arguments to display.
+    --smb.conf		show the samba configuration.
+
+  Processes
+    --mount		list USB disk mounted by otg-disk.
+    --ps		show the processes started by otg-disk.
+    --tcp		show (only some) service processes listening on
+			TCP/IP ports.
+    --umount <uuid>	unmount a partition by its uuid.
+    --wlan		show the current W-Lan status.
+
+  Debugging
+    --logfile		show otg-disk's log filename.
+    --tail		display and follow the logfile.
+
+  User Interface
+    --help		print this overview.
+    --bc		print bash completion code;
+    			usage: eval \"\$($0 --bc)\"
+
+"
+	}
+
+
+_bc_code() {
+    echo '
+unset -f _bc_otg_disk
+_bc_otg_disk() {
+	local	i this ARG CURRENT exp list
+
+	COMPREPLY=()
+	CURRENT=${COMP_WORDS[COMP_CWORD]}
+	this=${COMP_WORDS[0]}
+
+	# The default is to expand for options.
+	exp=option
+
+	# That changes to "expand for filenames" if the current
+	# arg does not start with a `-`.
+	if [ "${CURRENT#-*}" == "${CURRENT}" ]; then
+		exp=file
+	fi
+
+	# Check if `--configure` is found.
+	for i in $(seq 1 "$COMP_CWORD"); do
+		[ "$i" == "$COMP_CWORD" ]  &&  break
+
+		ARG=${COMP_WORDS[i]}
+		if [ "$ARG" == "--configure" ]; then
+		    exp=configure
+		fi
+	done
+
+	case "$exp" in
+	  option)
+		list=$($this --x-bc-options)
+		COMPREPLY=( $(compgen -W "$list" -- "$CURRENT") )
+		;;
+
+	  file)
+		COMPREPLY=( $(compgen -A file -- "$CURRENT") )
+		;;
+
+	  configure)
+		list=$($this --x-bc-configure)
+		COMPREPLY=( $(compgen -W "$list" -- "$CURRENT") )
+		;;
+	esac
+	return
+}
+
+# declare -pf _bc_otg_disk
+complete -F _bc_otg_disk -o filenames otg-disk
+'
+	}
+
+
+# check_root - no parameters.
+check_root() {
+	if [ "$(id -u)" != 0 ]; then
+		echo "$NAME: root permission required" >&2
+		exit 1
+	fi
+}
+
+
+# Check if otg-disk is running
+is_running() {
+	local PID PROC
+
+	PID=$(cat "$MYPID_FILE")
+	PROC="$(ps --no-headers -o %c $PID)"
+	[ "$PROC" = "$NAME" ]  &&  return 0  ||  return 1
+	return 1
+    }
+
+# If $1 is not a function, insert our bin directory.
+name_to_cmd() {
+	local T
+	T=$(type "$1" | head -1)
+	[ "$T" = "${T%%function}" ]  &&  echo "$BINDIR/$1"  ||  echo "$1"
+    }
+
+
+# Open the logfile if not started from a console.
+open_logfile() {
+	if ! tty -s  && [ "$LOGDIR" != "" ]; then
+	    mkdir -p -m 0755 "$LOGDIR"
+	    LOGFILE="$LOGDIR/$NAME-$(date +'%Y%m%d-%H%M%S').log"
+	    exec >"$LOGFILE" 2>&1
+	fi
+    }
+
+# Terminate all process when the script ends.
+sigterm_handler() {
+	local DIR SVC
+
+	echo $NAME: terminating ...
+	trap - $TRAP_SIGNALS
+
+	MOUNTS=$(list_mounts | awk '{ print $2 }')
+	for M in $MOUNTS; do
+	    echo "$NAME: unmounting $M"
+	    sudo umount "$M"
+	done
+
+	list_processes
+	kill_processes $(list_processes - -)
+
+	# Restart services that were stopped before.
+	SVC=$(cat "$RUN/system-services" | unify_list)
+	if [ "$SVC" != "" ]; then
+	    echo "$NAME: restarting services: $SVC"
+	    sudo systemctl start $SVC
+	fi
+}
+
+# Restart the script (e.g. after switching config)
+restart_handler() {
+	echo $NAME: restarting ...
+	trap '' $TRAP_SIGNALS
+
+	# Kill all running processes ...
+	kill_processes $(list_processes - -)
+
+	# ... wait a few seconds for the processes to
+	# terminiate and sigterm signals to arrive ...
+	trap '' $TRAP_SIGNALS
+	sleep 2 &  wait "$!"
+
+	# ... and restart the script.
+	trap '-' $TRAP_SIGNALS
+	ARGS=""
+	[ "$NO_OTG_CHECK" = "y" ]  &&  ARGS="--no-otg-check"
+	exec "$THIS" $ARGS --start
+    }
+
+# Open a new logfile (allowing to remove the current).
+reopenlog_handler() {
+	echo "$NAME: reopening logfile ..."
+	open_logfile
+	trap reopenlog_handler "$REOPENLOG_SIGNAL"
+    }
+
+
+unify_list() {
+    /usr/bin/gawk '#
+
+	# `unify-list [<word> ...] unifies and sort the <word>
+	# parameters on the command line or stdin.
+
+	BEGIN {
+		argi = 1;
+		if (argi >= ARGC) {
+			while (getline > 0) {
+				for (i = 1; i <= NF; i++)
+					w[$i] = 1;
+				}
+			}
+		else {
+			while (argi < ARGC) {
+				w[ARGV[argi]] = 1;
+				ARGV[argi++] = "";
+				}
+			}
+
+		n = asorti(w, x);
+		for (i = 1; i <= n; i++)
+			print x[i];
+
+		exit (0);
+		}' "$@"
+    }
+
+
+# Add services to SYSTEM_SERVICES.
+add_system_service() {
+    local LIST
+
+    LIST=$(cat "$RUN/system-services")
+    echo "$@" "$LIST" | unify_list >"$RUN/system-services"
+    }
+
+
+scan_files() {
+    /usr/bin/gawk '#
+
+	# `scan-files <type> <file> ...` scan each <file> if it
+	# contains an otg-disk marker of type <type> and list
+	# the name if it does.  If <type> is `.` then all files
+	# with a marker are listed with their type.
+
+	function noctrl(s) {
+		sub(/{ \t\r\n]+$/, "", s);
+		return (s);
+		}
+
+	#
+	# Function to read the script'\''s header and to convert
+	# it into an HTML form.
+	#
+
+	function readHeader(fn,    block, line, n, type, x) {
+
+		block = n = 1;
+		while (getline line <fn > 0) {
+			line = noctrl(line);
+			if (n == 1  &&  line !~ /^#!/)
+				break
+
+			n++;
+			if (line !~ /^#/) {
+				if (line != "")
+					break;
+
+				block++;
+				if (block > 2)
+					break;
+				}
+
+			if (match(line, /^#[ \t]+\*\*otg-disk[ \t]+([-a-z0-9]+)[ \t]*$/, x) > 0) {
+				type = x[1];
+				break;
+				}
+			}
+
+		close (fn);
+		return (type);
+		}
+
+	function getarg(k,  a) {
+		a = ARGV[k];
+		ARGV[k] = "";
+		return (a);
+		}
+
+	BEGIN {
+		STDERR = "/dev/stderr";
+
+		argi = 1;
+		type = getarg(argi++);
+		while (argi < ARGC) {
+			fn = getarg(argi++);
+			if ((t = readHeader(fn)) == "")
+				continue;
+
+			if (type == ".")
+				print fn, t;
+			else if (t == type)
+				print fn;
+			}
+
+		exit (0);
+		}' "$@"
+    }
+
+
+# Make a guess for system configuration commands.
+
+sys_config() {
+    /usr/bin/gawk '#
+
+	function sq(s) {
+		gsub(/'\''/, "'\''\\'\'''\''", s);
+		s = "'\''" s "'\''";
+		return (s);
+		}
+
+	function parsevar(line,   x) {
+		if (match(line, /^([A-Z][_A-Z0-9]+)='\''(.*)'\''$/, x) > 0) {
+			name = x[1];
+			var[name] = x[2];
+			}
+		}
+
+	function getvar(name, fail) {
+		if (! (name in var)) {
+			if (fail == 0) {
+				add("# variable not set: " name);
+				return ("");
+				}
+
+			printf ("variable not set: %s\n", name) >>"/dev/stderr";
+			exit (1);
+			}
+
+		return (var[name]);
+		}
+
+	function stat(fn, format, array,   cmd, line) {
+		if (fn == "") {
+			printf ("filename not set\n") >>"/dev/stderr";
+			exit (1);
+			}
+
+		if (format == "")
+			format = "%U %G %A";
+
+		cmd = sprintf ("stat -c %s %s 2>/dev/null", sq(format), sq(fn));
+		cmd |& getline line;
+		close(cmd);
+
+		split(line, array, " ");
+		return (line);
+		}
+
+	function add(line) {
+		T = T line "\n";
+		}
+
+	function make_directory(path, owner, perm,   x) {
+		if (path == "")
+			return (0);
+		else if (path in have_dir)
+			return (0);
+
+		if (stat(path, "%U %a", x) == "")
+			add( sprintf("mkdir -p --mode=%s %s", sq(perm), sq(path)) );
+		else {
+			if (x[1] != owner)
+				add( sprintf("sudo chown %s %s", sq(owner), sq(path)) );
+
+			if (x[2] != perm)
+				add( sprintf("chmod %s %s", sq(perm), sq(path)) );
+			}
+
+		have_dir[path] = 1;
+		return (0);
+		}
+
+	BEGIN {
+		mkdirs_only = 0;
+		need_packages = 0;
+
+		argi = 1;
+		this = ARGV[argi];  ARGV[argi++] = "";
+		if (this == "") {
+			printf ("path to otg-disk not set\n") >>"/dev/stderr";
+			exit (1);
+			}
+
+		if (ARGV[argi] == "--mkdirs") {
+			mkdirs_only = 1;
+			ARGV[argi++] = "";
+			}
+
+		# Make sure we can run otg-disk, even if it is
+		# not executable.
+		script = "exec sh " sq(this);
+
+		# Make sure otg-disk is executable.
+		if (stat(this, "%A") != "-rwxr-xr-x")
+			add( sprintf ("chmod 755 %s\n", sq(this)) );
+
+		# Configuration variables are not exported.  Start
+		# another otg-disk to read configuration values.
+		cmd = sprintf ("%s --show-config PATH USER DIR_PERM HTTP_DOC", script);
+		while (cmd | getline line > 0)
+			parsevar(line);
+
+		close (cmd);
+		user = getvar("USER", 1);
+		dir_perm = getvar("DIR_PERM", 1);
+
+		make_directory(getvar("PUBLIC_SHARE_PATH"), user, dir_perm);
+		make_directory(getvar("PRIVATE_SHARE_PATH"), user, "755");
+		make_directory(getvar("MEDIA_PATH"), user, "775");
+		make_directory(getvar("HTTP_DOCUMENT_ROOT"), user, "775");
+		if (T != "")
+			add( "# Create directories." );
+
+		if (mkdirs_only == 0) {
+			# Get the list of missing packages.
+			cmd = sprintf ("%s --apt-check", script);
+			while (cmd | getline > 0) {
+				# Expected format: `missing packages: samba dnsmasq ...`
+				if ($0 ~ /^missing packages:/) {
+					for (i = 3; i <= NF; i++)
+						missing[$i] = 1;
+
+					need_packages = 1;
+					}
+				}
+
+			close (cmd);
+
+			if (need_packages != 0) {
+				# Update the system (or at least the package database).
+				add( "" );
+				add( "# System update." );
+				add( sprintf ("sudo %s --apt-system-update", this) );
+				add( "" );
+
+				# Services we know.
+				n = split("samba:smbd nmbd,inotifytools,minidlna:minidlna" \
+						",hostapd:hostapd,dnsmasq:dnsmasq",
+						x, / *, */);
+
+				# No go through the list and print commands to
+				# install missing packages.
+				add("# Install packages.");
+				for (i = 1; i <= n; i++) {
+					split(x[i], detail, / *: */);
+					if (detail[1] in missing) {
+						add( sprintf ("sudo %s --apt-get %s -- %s", this,
+							detail[1], detail[2]) );
+						}
+					}
+				}
+			}
+
+		if (T == "")
+			print "no action required" >"/dev/stderr";
+		else {
+			print "set -e\n" \
+				T;
+			}
+
+		exit (0);
+		}' "$@"
+    }
+
+
+# Implement inplace editing of configuration variables.
+
+configure() {
+    /usr/bin/gawk '#
+
+	function error(msg) {
+		print msg >>STDERR;
+		exit (1);
+		}
+
+	function sq(s) {
+		gsub(/'\''/, "'\''\\'\'''\''", s);
+		s = "'\''" s "'\''";
+		return (s);
+		}
+
+	function sq2(val) {
+		gsub(/"/, "\\", val);
+		val = "\"" val "\"";
+		return (val);
+		}
+
+	function writefile(fn, data) {
+		printf ("%s", data) >fn;
+		close (fn);
+		}
+
+	function to_var(s,   v) {
+		v = toupper(s);
+		gsub(/-/, "_", v);
+		if (v !~ /^[A-Z][_A-Z0-9]/)
+			error("bad variable name: " v);
+
+		return (v);
+		}
+
+	function to_opt(v,   s) {
+		s = tolower(v);
+		gsub(/_/, "-", s);
+		s = "--" s;
+
+		return (s);
+		}
+
+	function parse_script(fn,   line, var, val, x, in_config) {
+
+		in_config = 0;
+		_changes = 0;
+		while (getline line <fn > 0) {
+			_ORIG = _ORIG line "\n";
+
+			if (in_config == 0) {
+				if (line ~ /^# -- config starts -- /)
+					in_config = 1;
+				}
+			else {
+				if (line ~ /^# -- config ends -- /)
+					in_config = 0;
+				}
+
+			if (in_config == 0)
+				;
+			else if (match(line, /^(export +)?([A-Z][_A-Z0-9]+)=(['\''"]?)(.*)$/, x) > 0) {
+				var = x[2];
+				if (x[3] == "")
+					val = x[4];
+				else {
+					if (substr(x[4], length(x[4]), 1) != x[3])
+						error("bad assignment: " line);
+
+					val = substr(x[4], 1, length(x[4]) - 1);
+					}
+
+				_NAME[++_names] = var;
+				if (var in _CONF) {
+					line = sprintf ("%s%s=%s", x[1], var, sq2(_CONF[var]));
+					#printf (">> %s\n", line) >>STDERR;
+					_changes++;
+					}
+				else
+					_CONF[var] = val;
+				}
+
+			_RES = _RES line "\n";
+			}
+
+		close (fn);
+		return (_changes);
+		}
+
+	function update_script(fn,   cmd, line, bkp, TTY) {
+		if (_changes == 0) {
+			printf ("no modifications\n") >>STDERR;
+			exit (0);
+			}
+
+		bkp = fn "~";
+		writefile(bkp, _ORIG);
+		writefile(fn, _RES);
+
+		if (assumeYes == 0) {
+			cmd = sprintf ("diff --color=always %s %s | less -XRF", sq(bkp), sq(fn));
+			printf ("%s\n\n", cmd);
+			system(cmd);
+			printf ("\nContinue? [y/N]: ")
+			getline line;
+			if (tolower(line) != "y") {
+				printf ("Cancelled.\n");
+				writefile(fn, _ORIG);
+				return (1);
+				}
+			}
+
+		return (0);
+		}
+
+	function n_split(s, arr, sep, m,   i, n) {
+		n = split(s, arr, sep);
+		for (i = m + 1; i <= n; i++)
+			arr[m] = arr[m] seq arr[i];
+
+		return (n);
+		}
+
+	function set_config(vars, arr,   i, n, x) {
+		n = split(vars, x, /[ ,]+/);
+		for (i = 1; i <= n; i++) {
+			if (arr[i] != "")
+				_CONF[x[i]] = arr[i];
+			}
+		}
+
+	function bc_names(fn,   i, n, name, x, T) {
+		parse_script(fn);
+		n = asorti(_CONF, x);
+		for (i = 1; i <= n; i++) {
+			name = x[i];
+			gsub(/_/, "-", name);
+			name = tolower(name);
+			T = T sprintf ("--%s\n", name);
+			}
+
+		close (fn)
+		return (T);
+		}
+
+	function bc_options(fn,   i, n, name, x, T) {
+		T = bc_names(fn) \
+			sprintf ("--public-share --private-share --http-server --wlan" \
+				" --export --names --print --save --yes");
+
+		return (T);
+		}
+
+	function usage(    T) {
+		printf ("\n" \
+			"Usage: %s --configure --<var> <val> ...\n" \
+			"\n" \
+			"  Command line parameters are expected to be sequences of otg-disk\n" \
+			"  variable name (indicated by `--`) followed by its value.  Variables\n" \
+			"  names are uppercased and any dash `-` is replaced with a `_`.\n" \
+			"\n" \
+			"    --names		print available variables; alt: use bash\n" \
+			"    			auto completion.\n" \
+			"\n" \
+			"  The following options can be used to change multiple values with\n" \
+			"  a single option.  Empty parameters are not assigned.\n" \
+			"\n" \
+			"    --public-share <name>,<path>,<options>\n" \
+			"    --private-share <name>,<path>,<username>,<password>,<options>\n" \
+			"    --http-server <port>,<path>\n" \
+			"    --wlan <ssid>,<password>\n" \
+			"\n" \
+			"  The new values are inserted into the otg-disk script.  The difference\n" \
+			"  between old and new file is displayed and the user is asked for\n" \
+			"  confirmation.\n" \
+			"\n" \
+			"    --yes		do not ask for user confirmation; assume `yes`.\n" \
+			"\n" \
+			"  A backup of the original script is stored as %s~.\n" \
+			"\n" \
+			"  Use\n" \
+			"\n" \
+			"    --print --<var> ...	print values of listed <var>s instead of\n" \
+			"    			setting them.\n" \
+			"\n" \
+			"  to query variable values.\n" \
+			"\n" \
+			"    --export [<regexp> ...]	print values as shell command\n" \
+			"\n" \
+			"  can be stored in a file to restore the values later.  The rexexp value\n" \
+			"  `--dirs` lists the directory configuration\n" \
+			"\n" \
+			"\n", SCRIPT, SCRIPT);
+
+		exit (0);
+		}
+
+	function nextarg(name,   par) {
+		if (argi >= ARGC)
+			error("missing parameter: " name);
+
+		par = ARGV[argi];
+		ARGV[argi++] = "";
+
+		return (par);
+		}
+
+	BEGIN {
+		STDERR = "/dev/stderr";
+
+		assumeYes = 0;
+		printValues = 0;
+
+		argi = 1;
+		if (ARGV[argi] == "--x-bc-options") {
+			nextarg("");
+			fn = nextarg("script file");
+			print bc_options(fn);
+			exit (0);
+			}
+
+		while (argi < ARGC  &&  substr(ARGV[argi], 1, 2) == "--") {
+			count++;
+			opt = nextarg("option");
+
+			if (opt == "--public-share") {
+				n_split(nextarg("public share parameter: name,path,options"), x, ",");
+				set_config("PUBLIC_SHARE_NAME PUBLIC_SHARE_PATH" \
+					" PUBLIC_SHARE_OPT", x);
+				}
+			else if (opt == "--private-share") {
+				n_split(nextarg("private share parameter: name,path,user,password,options"), x, ",");
+				set_config("PRIVATE_SHARE_NAME PUBLIC_SHARE_PATH" \
+					" PRIVATE_SHARE_USERNAME PRIVATE_SHARE_PASSWORD" \
+					" PRIVATE_SHARE_OPT", x);
+				}
+			else if (opt == "--http-server") {
+				split(nextarg("http server parameter: port,path"), x, ",");
+				_CONF["HTTP_PORT"] = x[1];
+				_CONF["HTTP_DOCUMENT_ROOT"] = x[2];
+				}
+			else if (opt == "--wlan") {
+				n_split(nextarg("wlan parameter: ssid,password"), x, ",");
+				_CONF["WLAN_SSID"] = x[1];
+				_CONF["WLAN_PASSWD"] = x[2];
+				}
+			else if (opt == "--yes")
+				assumeYes = 1;
+			else if (opt == "--print") {
+				while (argi < ARGC - 1) {
+					name = nextarg("parameter name");
+					sub(/^--/, "", name);
+					var_name[ ++var_count ] = to_var(name);
+					}
+
+				printValues = 1;
+				break;
+				}
+			else if (opt ~ /^--(export|save)$/) {
+				while (argi < ARGC - 1) {
+					p = nextarg("parameter name");
+					if (p == "--dirs") {
+						pattern[++pcount] = "_path$";
+						pattern[++pcount] = "http_document_root";
+						pattern[++pcount] = "^(sysctrl|logdir)$";
+						continue;
+						}
+
+					sub(/^--/, "", p);
+					pattern[ ++pcount ] = p;
+					}
+
+				exportValues= 1;
+				break;
+				}
+			else if (opt == "--names")
+				printNames = 1;
+			else if (opt == "--help")
+				printHelp = 1;
+			else {
+				name = to_var(substr(opt, 3));
+				_CONF[name]  = nextarg("parameter");
+				}
+			}
+
+		SCRIPT = nextarg("script file");
+		if (argi < ARGC)
+			error("extra arguments on command line: " ARGV[argi]);
+
+		if (count == 0  ||  printHelp == 1)
+			usage();
+
+		rc = 0;
+		parse_script(SCRIPT);
+		if (printNames == 1) {
+			T = bc_names(SCRIPT);
+			gsub(/ +/, "\n", T);
+			gsub(/(^|\n)/, "&    ", T);
+			print T;
+			}
+		else if (printValues == 1) {
+			for (i = 1; i <= var_count; i++)
+				printf ("%s\n", _CONF[var_name[i]]);
+			}
+		else if (exportValues == 1) {
+			if (pcount == 0)
+				pattern[++pcount] = ".";
+
+			for (i = 1; i <= _names; i++) {
+				name = _NAME[i];
+				n = tolower(name);
+				for (j = 1; j <= pcount; j++) {
+					if (n ~ pattern[j]) {
+						p = sprintf("%s %s", to_opt(name), sq(_CONF[name]));
+						T = T (T != ""? " \\\n": "") p;
+						break;
+						}
+					}
+				}
+
+			if (T == "")
+				error("no matching option names");
+
+			T = SCRIPT " --configure \\\n" T;
+			gsub(/\n/, "\n    ", T);
+			T = "#!/bin/sh\n" \
+				"#\n" \
+				"\n" \
+				T;
+
+			print T
+			}
+		else
+			rc = update_script(SCRIPT);
+
+		exit (rc);
+		}' "$@"
+
+    return $?
+    }
+
+
+# Print configuration variables.
+
+print_config() {
+
+    # The --shell option formats the output as shell command, which
+    # can be used to set the configuration values later again.
+    # Any environment variables inside asssignements are lost.
+
+    /usr/bin/gawk '#
+
+	function add(line,   p, x) {
+		if (shell_syntax == 0)
+			T = T line "\n";
+		else {
+			if (match(line, /^([A-Z][_A-Z0-9+]*)=(.*)$/, x) != 0) {
+				p = "--" tolower(x[1]);
+				gsub(/_/, "-", p)
+				T = T p " " x[2] " \\\n";
+				}
+			}
+		}
+
+	BEGIN {
+		argi = 1;
+		script = ARGV[argi];  ARGV[argi++] = "";
+		if (ARGV[argi] == "--shell") {
+			shell_syntax = 1;
+			ARGV[argi++] = "";
+			}
+
+		while (argi < ARGC) {
+			p = tolower(ARGV[argi]);
+			ARGV[argi++] = "";
+			if (p == "--dirs") {
+				pattern[++np] = "^(sysctrl|logdir)$|_path$";
+				continue;
+				}
+
+			pattern[++np] = p;
+			}
+
+		while (getline line > 0) {
+			have_assignments = 1;
+			if (match(line, /^([_A-Z0-9]+)='\''.*'\''$/, x) > 0) {
+				v = x[1];
+				have_var[v] = line;
+				}
+			}
+
+		in_config = 0;
+		while (getline line <script > 0) {
+			if (line ~ /^# -----/) {
+				if (in_config)
+					break;
+
+				getline line <script;
+				if (line ~ /# Configuration/)
+					in_config = 1;
+				}
+
+			if (in_config == 0)
+				continue;
+
+			if (line == "") {
+				elc++;
+				if (elc == 2  &&  np == 0  &&  have_assignments != 0)
+					add("#");
+				}
+			else
+				elc = 0;
+
+			if (match(line, /^(export +)?([_A-Z0-9]+)=(.*)/, x) > 0) {
+				v = x[2];
+				if (have_assignments == 0) {
+					add(x[2]);
+					continue;
+					}
+
+				if (! (v in have_var))
+					continue;
+				else if (np > 0) {
+					for (i = 1; i <= np; i++) {
+						if (tolower(v) ~ pattern[i])
+							break;
+						}
+
+					if (i > np)
+						continue;
+					}
+
+				add(have_var[v]);
+				}
+			}
+
+		close (script);
+
+		if (shell_syntax != 0) {
+			gsub(/[# \\\n]+\n$/, "", T);
+			T = script " --configure \\\n" T;
+			gsub(/\n/, "\n    ", T);
+			T = "#!/bin/sh\n" \
+				"#\n" \
+				"\n" \
+				T;
+			}
+
+		sub(/[ #\t\n]+$/, "", T);
+		print T;
+
+		exit (0);
+		}' "$@"
+    }
+
+
+
+# Process handling.
+
+list_processes() {
+
+	# `lp [<pgid> [<name>]]` displays names of the process in
+	# group <pgid> or all pids of <name>.  <name> computation
+	# may need further adjustements.
+
+	if [ "$#" = "0"  -o  "$1" = "-" ]; then
+	    set "$(cat "$MYPID_FILE")" "$2"
+	fi
+
+	ps --cols=80 -a -eo pid,pgid,user,args |
+	awk '
+		BEGIN {
+			argi = 1;
+			pgid = ARGV[argi]; ARGV[argi++] = "";
+
+			if (argi < ARGC) {
+				proc = ARGV[argi];
+				ARGV[argi++] = "";
+				}
+			}
+
+		function bn(fn) {
+			sub(/^[.\/].*\//, "", fn);
+			return (fn);
+			}
+
+		function pp(pid, name) {
+			if (proc == "")
+				printf ("%s %s\n", pid, name);
+			else if (proc == name  ||  proc == "-")
+				printf ("%s\n", pid);
+			}
+
+		$2 == pgid {
+			pid = $1;
+			if (pid == pgid  ||  pid == PROCINFO["pid"])
+				next;
+
+			cmd = $4;
+			gsub(/[\[\]]/, "", cmd);
+			cmd = bn(cmd);
+			if (cmd ~ /^(.*sh|perl)$/) {
+				if ($5 ~ /^-.*c/)
+					next;
+
+				pp(pid, bn($5));
+				}
+			else if (cmd ~ /^g?awk/) {
+				cmd = "";
+				for (i = 5; i <= NF; i++) {
+					if ($i == "-f"  ||  $i == "-E") {
+						cmd = $(i+1);
+						break;
+						}
+					else if (substr($i, 1, 2) == "??")
+						break;
+					}
+
+				if (cmd != "")
+					pp(pid, bn(cmd));
+				}
+			else if (cmd == "busybox")
+				pp(pid, $5);
+			else if (cmd == "ps")
+				;
+			else {
+				pp(pid, cmd);
+				}
+			}' "$@"
+    }
+
+
+list_servers() {
+	local MY_PROCESS_GROUP
+
+	# `list_servers [<port>]` list processes that are connected
+	# to a local service port (i.e. local servers).  List only
+	# pids is <port> is set.
+
+	export MY_PROCESS_GROUP=$(list_processes - -)
+
+	netstat --tcp -anp 2>/dev/null |
+	awk '
+		BEGIN {
+			argi = 1;
+			while (argi < ARGC) {
+				p = ARGV[argi] + 0;
+				if (p > 0) {
+					portlist[p] = 1;
+					have_portlist = 1;
+					}
+
+				ARGV[argi++] = "";
+				}
+			}
+
+		function get_port(s,   x) {
+			match(s, /:([0-9]+)$/, x)
+			return ( sprintf("%05d", x[1]) );
+			}
+
+		$5 ~ /\*$/ {
+			port = get_port($4);
+			is_service_port[port] = 1;
+			}
+
+		index($7, "/") > 0 {
+			if ((port = get_port($4)) > 0) {
+				if (have_portlist  &&  ! ((port + 0) in portlist))
+					next;
+
+				split($7, x, "/");
+				pid = x[1];
+				key = pid "," port;
+				if (have_proc[key] == "") {
+					name = x[2];
+					sub(/[: ].*$/, "", name);
+					proc[port] = proc[port] " " pid "/" name;
+					have_proc[key] = 1;
+					}
+				}
+			}
+
+		END {
+			n = split(ENVIRON["MY_PROCESS_GROUP"], x, " ");
+			for (i = 1; i <= n; i++)
+				my_group[x[i]] = 1;
+
+			for (p in is_service_port) {
+				n = split(proc[p], x, " ");
+				for (i = 1; i <= n; i++) {
+					split(x[i], y, "/");
+					if (! (y[1] in my_group))
+						continue;
+					else if (have_portlist)
+						print y[1];
+					else
+						print p+0, y[1], y[2];
+					}
+				}
+
+			}' "$@"
+    }
+
+
+kill_processes() {
+	local LIST SIG MY_ID
+
+	# `kill_processes <pid> ...` terminates all listed
+	# processes.  _sudo_ is  used in case we are not root
+	# and the owning user is different from us.
+
+	MY_ID=$(id -u)
+	SIG=-15
+
+	# Translate names into pids.
+	LIST=""
+	for i in "$@"; do
+	    x=${i%%[0-9]}
+	    if [ "$x" = "$i" ]; then
+		LIST="$LIST $(list_processes - "$i")"
+	    else
+		LIST="$LIST $i"
+	    fi
+	done
+
+	LIST=${LIST%% }
+	if [ "$LIST" = "" ]; then
+	    return
+	fi
+
+	# Calculate which processes need sudo.
+	for pid in $LIST; do
+	    if [ "$MY_ID" = "0" ]; then
+		UK="$UK $pid"
+	    else
+		owner=$(ps -q "$pid" -ho user)
+		if [ "$owner" = "$USER" ]; then
+		    UK="$UK $pid"
+		else
+		    RK="$RK $pid"
+		fi
+	    fi
+	done
+
+	# Send signals.
+	[ "$UK" != "" ]  &&  kill "$SIG" $UK 2>/dev/null
+	[ "$RK" != "" ]  &&  sudo kill "$SIG" $RK 2>/dev/null
+    }
+
+
+
+
+# kill_process <piddir> <pidfile> <procname>
+# kill_process() {
+# 	# The process name default to the pid filename.
+# 	procname="$3"
+# 	[ "$procname" = "" ]  &&  procname="$2"
+# 
+# 	# Check if the pidfile exist.
+# 	pidfile="$1/$2.pid"
+# 	[ ! -f "$pidfile" ]  &&  return
+# 
+# 	if [ "$procname" = "-" ]; then
+# 		kill -TERM $(cat "$pidfile")
+# 	else
+# 		# This verifies the pid against the process name and
+# 		# terminates the process if they match.
+# 		pkill -TERM --pidfile "$pidfile" "$procname"
+# 	fi
+# 	return
+# }
+# 
+
+
+# -------------------------------------------------------------------
+# USB disks
+
+
+usb_monitor() {
+    /usr/bin/gawk '#
+
+	# `usb-monitor` - monitor /var/log/messages for detection of USB
+	# disks report changes and run otg-disk to try to mount partitions.
+
+	function sq(s) {
+		gsub(/'\''/, "'\''\\'\'''\''", s);
+		s = "'\''" s "'\''";
+		return (s);
+		}
+
+	function mount_partition(disk, part,   k, lsblk, uuid) {
+		if (substr(part, 1, length(disk)) != disk) {
+			printf ("%s: bad partition name: %s %s\n",
+				program, disk, part) >>STDERR;
+			return (1);
+			}
+
+		# Get UUID from lsblk.
+		lsblk = "/usr/bin/lsblk --raw --output NAME,MAJ:MIN,UUID,LABEL,SERIAL,PARTLABEL";
+		uuid = "";
+
+		k = 2;
+		while (k > 0) {
+			while (lsblk | getline > 0) {
+				if ($1 == part) {
+					uuid = $3;
+					break;
+					}
+				}
+
+			close (lsblk);
+			k--;
+			if (k > 0)
+				system("sleep 2");
+			}
+
+		if (uuid == "") {
+			printf ("%s: no uuid: %s %s\n",
+				program, disk, part) >>STDERR;
+			return (1);
+			}
+
+		printf ("%s: detected %s %s %s\n", program, disk, part, uuid);
+		cmd = sprintf ("exec %s --mount %s %s %s &",
+			sq(SCRIPT), sq(disk), sq(part), sq(uuid));
+		printf ("%s: cmd= %s\n", program, cmd);
+		system(cmd);
+
+		return (0);
+		}
+
+	BEGIN {
+		program = "usb-monitor";
+		STDERR = "/dev/stderr";
+
+		argi = 1;
+		SCRIPT = ARGV[argi];  ARGV[argi++] = "";
+
+		tail = "/usr/bin/tail -n 0 -F /var/log/messages";
+		while (tail | getline line > 0) {
+
+			# Expected format: Dec 20 12:58:58 exp-03 kernel: [ 1404.856034]  sda: sda1 sda2
+			sub(/\[[^\]]*\]/, "", line);
+
+			# Now: Dec 20 12:58:58 exp-03 kernel:   sda: sda1 sda2
+			n = split(line, x, " ");
+			if (x[5] != "kernel:"  ||  x[6] !~ /sd[a-z]:/)
+				continue;
+
+			disk = substr(x[6], 1, length(x[6]) - 1);
+			for (i = 7; i <= n; i++)
+				mount_partition(disk, x[i]);
+			}
+
+		close (tail);
+		exit (0);
+		}' "$@"
+    }
+
+
+list_mounts() {
+	export USER
+
+	# `list_mounts` list mounted USB disks from their
+	# files in $SYSCTRL.
+
+	/bin/ls -1 "$SYSCTRL/usb".* 2>/dev/null |
+	awk '
+		/./ {
+			fn = $0;
+			sub(/^.*\/usb\./, "", fn);
+			sub(/\.[^.]+/, "", fn);
+			dir = sprintf ("/media/%s/%s", ENVIRON["USER"], fn);
+			_have_dir[dir] = fn;
+			n++;
+			}
+
+		END {
+			if (n == 0)
+				exit (0);
+
+			cmd = "mount";
+			while (cmd | getline > 0) {
+				if ($3 in _have_dir)
+					print _have_dir[$3], $3
+				}
+
+			close (cmd);
+			}'
+    }
+
+
+mount_disk() {
+	local DEV DIR UID GID
+
+	# `mount-disk <disk> <part> <uuid>` mounts the partition
+	# on /mnt/<user>/<uuid>.
+
+	DEV="/dev/$2"
+	DIR="/media/$USER/$3"
+
+	UID=$(id -u)
+	GID=$(id -g)
+
+	sudo mkdir -p "$DIR"
+	sudo mount "$DEV" "$DIR" -o "uid=$UID,gid=$GID"
+    }
+
+
+umount_disk() {
+	local DIR
+
+	# `umount_operation <uuid>` unmounts the partition
+	# and removes the files from $SYSCTRL.
+
+	CMD="$BINDIR/usb.$1"
+	if [ ! -x "$CMD" ]; then
+	    echo "$NAME: no such usb handler: $CMD" >&2
+	else
+	    "$CMD" --umount "$1"
+	fi
+
+	touch "$SYSCTRL/.usb.$1"
+	rm "$SYSCTRL/usb.$1".* "$SYSCTRL/.usb.$1"
+
+	DIR="/media/$USER/$1"
+	sudo umount "$DIR"
+	sudo rmdir "$DIR"
+    }
+
+
+is_mounted() {
+	local DIR
+
+	# `is_mounted <uuid>` checks if the disk <uuid> is
+	# mounted.
+
+	DIR="/media/$USER/$1"
+	if ! mount | grep -q "$DIR" ; then
+	    echo "$NAME: uuid $1 not mounted on $DIR" >&2
+	    return 1
+	fi
+    }
+
+# -------------------------------------------------------------------
+# sys_monitor <sysdir> <wrapper-script> <svc> ...
+
+sys_monitor() {
+	local SYS SCRIPT LIST OPS
+
+	# The first parameter is the directory and the second the script
+	# we will call run start or stop services.
+	SYS="$1"
+	SCRIPT="$2";
+	shift 2  ||  return 1
+
+	# Terminate another inotifywait which might be running.  Otherwise
+	# the following rm commands will trigger all actions.
+	pkill --signal TERM --full "inotifywait.*$SYSCTRL"
+
+	# Make sure the directory exists and clean all files.
+	mkdir --parents "$SYSCTRL"
+	rm -f "$SYSCTRL"/* "$SYSCTRL"/.[a-z]*
+	[ "$DIR_PERM" != "" ]  &&  chmod "$DIR_PERM" "$SYSCTRL"
+
+	# Compute the system operations ...
+	OPS="shutdown reboot"
+
+	if [ "$OTG_FAILSAFE" = "yes" ]; then
+	    OPS="$OPS _reenable-service"
+	fi
+
+	if [ "$OTG_STOP_FILE" = "yes" ]; then
+	    OPS="$OPS otg-disk.stop"
+	fi
+
+	# ... and create files for them.
+	for F in $OPS; do
+	    touch "$SYSCTRL/$F"
+	    LIST="$LIST $F"
+	done
+
+
+	# Create files for the builtin-services.
+	for S in "$@"; do
+	    for F in $($S --op); do
+		touch "$SYSCTRL/$S.$F"
+	    done
+	done
+
+
+	# Extensions.
+	EXTENSIONS=$( (echo $EXTENSIONS; scan_files extension *) |
+		unify_list )
+	for E in $EXTENSIONS; do
+	    if [ -x "$BINDIR/$E" ]; then
+		for F in $("$BINDIR/$E" --op); do
+		    touch "$SYSCTRL/$E.$F"
+		done
+	    fi
+	done
+
+
+	exec inotifywait -r -m -e create -e delete "$SYSCTRL" |
+	awk '
+		# check_service, _svc, start, stop, touch can be deleted.
+
+		function sq(string) {
+			gsub(/'\''/, "'\''\\'\'''\''", string);
+			string = "'\''" string "'\''";
+			return (string);
+			}
+
+		function is_locked(dir, fn,   path, line) {
+			return (fn in _have_lockfile? 1: 0);
+			}
+
+		function _system(cmd) {
+			if (ENVIRON["MONITOR_LOG"] == "yes")
+				printf ("cmd= %s\n", cmd);
+
+			return (system(cmd));
+			}
+
+		function sudo(cmd) {
+			cmd = "sudo " cmd;
+			_system(cmd);
+			}
+
+		function run(svc, op) {
+			cmd = sprintf ("%s --op %s %s", sq(_script), sq(svc), sq(op));
+			_system(cmd);
+			}
+
+		function check_service(svc) {
+			if (! (svc in _svc)) {
+				printf ("unknown service: %s\n", svc) >>STDERR;
+				return (-1);
+				}
+
+			return (0);
+			}
+
+		function stop(svc) {
+			if (check_service(svc) != 0)
+				return (-1);
+
+			cmd = sprintf ("%s stop %s", _script, svc);
+			_system(cmd);
+			}
+
+		function start(svc) {
+			if (check_service(svc) != 0)
+				return (-1);
+
+			cmd = sprintf ("%s start %s", _script, svc);
+			_system(cmd);
+			}
+
+		function touch(fn) {
+			fn = _dir "/" fn;
+			printf ("") >fn;  close (fn);
+			}
+
+		BEGIN {
+			program = "sys-monitor";
+			STDERR = "/dev/stderr";
+
+			# The first parameter is the wrapper script
+			# to start and stop services.
+			_script = ARGV[1];
+			ARGV[1] = "";
+
+			# Read the list of configured services.
+			for (i = 2; i < ARGC; i++) {
+				sub(/^no-/, "", ARGV[i]);
+				_svc[ARGV[i]] = 1;
+				ARGV[i] = "";
+				}
+
+			if ("_reenable-service" in _svc)
+				_svc["_enable_"] = 1;
+			}
+
+		/./ { if (ENVIRON["MONITOR_LOG"] != "") print; fflush(); }
+
+		$2 == "DELETE" {
+			_dir = $1;
+			fn = $3;
+			# if (fn ~ /no-(reboot|shutdown)/)
+			#	;
+			# else
+
+			if (substr(fn, 1, 1) == ".") {
+				delete _have_lockfile[fn];
+				printf ("%s: lock file removed: %s\n", program, fn) >>STDERR;
+				next;
+				}
+
+			if (fn == "shutdown")
+				sudo("shutdown -h now");
+			else if (fn == "reboot")
+				sudo("reboot");
+			else if (fn == "_reenable-service")
+				start("--enable");
+			else if (match(fn, /^(.+)\.([^.]+)/, x) > 0) {
+				# Filename is <service>.<operation>;
+				# operations-files are created from
+				# otg-disk --run.
+
+				if (is_locked(_dir, x[1])) {
+					# printf ("%s: module locked: %s\n", program, x[1]) >>STDERR;
+					next;
+					}
+
+				run(x[1], x[2]);
+				}
+			#else if (substr(fn, 1, 3) != "no-") {
+			#	printf ("%s: `no-`-branch: %s\n", program, fn) >>STDERR;
+			#	start(fn);
+			#	if (fn !~ /^wlan\./)
+			#		touch("no-" fn);
+			#	}
+
+			# else {
+			#	fn = substr(fn, 4);
+			#	stop(fn);
+			#	touch(fn);
+			#	}
+			else {
+				printf ("%s: unhandled operation: %s\n", program, fn) >>STDERR;
+				}
+
+			fflush();
+			}
+
+		$2 == "CREATE" {
+			_dir = $1;
+			fn = $3;
+			if (substr(fn, 1, 1) != ".")
+				next;
+
+			printf ("%s: lock file created: %s\n", program, fn) >>STDERR;
+			_have_lockfile[ substr(fn, 2) ] = 1;
+
+			fflush();
+			}
+
+		# $2 == "MOVED_FROM" {
+		#	_dir = $1;
+		#	n1 = $3;
+		#	getline;  if ($2 != "MOVED_TO") next;  n2 = $3;
+		#	if (substr(n1, 1, 3) == "no-") {
+		#		svc = substr(n1, 4);
+		#		stop(svc);
+		#		touch(svc);
+		#		}
+		#	else {
+		#		start(n1);
+		#		touch("no-" n1);
+		#		}
+		#	}' "$SCRIPT" $LIST wlan.off wlan.client wlan.ap &
+
+	# The while-wait-loop allows to handle signals.
+	while [ "$(list_processes - inotifywait)" != "" ]; do
+	    wait "$!"
+	done
+
+    }
+
+
+
+
+# -------------------------------------------------------------------
+# W-LAN
+
+wlan_status() {
+	local ST
+
+	# `wlan_status --status|--op|--stop` lists or stops the
+	# current status or lists the operations.
+
+	# Get/stop the current status.
+	if pgrep wpa_supplicant >/dev/null; then
+	    ST=client
+	    if [ "$1" = "--stop" ]; then
+		sudo systemctl stop dhcpcd wpa_supplicant
+		sudo ifconfig $AP_IFC down
+	    fi
+	elif pgrep hostapd >/dev/null; then
+	    ST=access-point
+	    if [ "$1" = "--stop" ]; then
+		kill_processes hostapd dnsmasq
+		sudo route del -net "$AP_NETWORK" netmask "$AP_NETMASK" dev "$AP_IFC"
+		sudo ifconfig $AP_IFC down
+	    fi
+	else
+	    ST=off
+	    [ "$1" = "--stop" ]  &&  { rfkill unblock wlan; sleep 2; }
+	fi
+
+	# Print status or operations.
+	if [ "$1" = "--status" ]; then
+	    echo "$ST"
+	elif [ "$1" = "--op" ]; then
+	    for I in off client access-point; do
+		[ "$I" != "$ST" ]  &&  echo "$I"
+	    done
+	fi
+    }
+
+
+wlan() {
+	case "$1" in
+	    --op)
+		wlan_status --op
+		;;
+
+	    --status)
+		wlan_status --status
+		;;
+
+	    off)
+		wlan_status --stop
+		rfkill block wlan
+		;;
+
+	    client)
+		wlan_status --stop
+		sudo ifconfig $AP_IFC 0.0.0.0 up
+		sudo systemctl start dhcpcd wpa_supplicant
+		;;
+
+	    access-point)
+		wlan_status --stop
+
+		# Configure the interface ...
+		sudo ifconfig "$AP_IFC" "$AP_IP_ADDR" netmask "$AP_NETMASK" up
+
+		# ... add the network route ...
+		sudo route add -net "$AP_NETWORK" netmask "$AP_NETMASK" dev "$AP_IFC"
+
+		# ... start the DHCP server ...
+		sudo dnsmasq -k -i "$AP_IFC" -F "$AP_DHCP_DEF" -x "$RUN"/dnsmasq.pid \
+			--host-record="$(hostname),$AP_IP_ADDR" &
+
+		# ... now start the AP daemon.
+		echo $$ >"$RUN"/hotspot.pid
+		sudo hostapd -i "$AP_IFC" /dev/stdin <<-EOF &
+			# the interface used by the AP
+			interface=wlan0
+			# "g" simply means 2.4GHz band
+			hw_mode=g
+			# the channel to use
+			channel=10
+			# limit the frequencies used to those allowed in the country
+			ieee80211d=1
+			# the country code
+			country_code=$WLAN_COUNTRY_CODE
+			# 802.11n support
+			ieee80211n=1
+			# QoS support, also required for full speed on 802.11n/ac/ax
+			wmm_enabled=1
+
+			# the name of the AP
+			ssid=$WLAN_SSID
+			# 1=wpa, 2=wep, 3=both
+			auth_algs=1
+			# WPA2 only
+			wpa=2
+			wpa_key_mgmt=WPA-PSK
+			rsn_pairwise=CCMP
+			wpa_passphrase=$WLAN_PASSWD
+
+			# optional: write some output to stdout
+			logger_stdout=-1
+			logger_stdout_level=0
+			EOF
+		;;
+
+	    *)
+		echo wlan: operation not implemented: "$1" >&2
+		exit 1
+		;;
+	esac
+	}
+
+
+autostart_ap() {
+	# Wait to allow the netwok to come up.
+	sleep "$AP_AUTOSTART_DELAY"
+
+	# Check if there are *any* network routes.  There will
+	# be none if *all* netowrks are down.
+	nr=$(/sbin/route -n | wc -l)
+	if [ "$nr" -lt "3" ]; then
+	    echo no network, starting access point
+	    rm "$SYSCTRL/wlan.access-point"
+
+	    if [ "$AP_AUTOSTART_HTTP" = "yes" ]; then
+		rm "$SYSCTRL/httpd.start"
+	    fi
+	fi
+    }
+
+
+httpd() {
+	if [ "$1" = "stop" ]; then
+	    kill_processes httpd
+	elif [ "$1" = "start" ]; then
+	    export DOCUMENT_ROOT="$HTTP_DOCUMENT_ROOT"
+	    busybox httpd -f -p "$HTTP_PORT" -h "$HTTP_DOCUMENT_ROOT" -c /dev/null &
+	    echo $! >"$RUN/httpd.pid"
+	elif [ "$1" = "--op" ]; then
+	    [ "$(list_processes - httpd)" = "" ]  &&  echo start  ||  echo stop
+	else
+	    echo "httpd: operation no implemented: $1" >&2
+	fi
+    }
+
+vnc() {
+	if [ "$1" = "stop" ]; then
+	    kill_processes vncserver
+	elif [ "$1" = "start" ]; then
+	    vncserver -fg -localhost no -geometry 1400x900 :1 &
+	    echo $! >"$RUN/vncserver.pid"
+	elif [ "$1" = "--op" ]; then
+	    [ "$(list_processes - vncserver)" = "" ]  &&  echo start  ||  echo stop
+	else
+	    echo "vncserver: operation no implemented: $1" >&2
+	fi
+    }
+
+minidlna() {
+	if [ "$1" = "stop" ]; then
+	    kill_processes minidlnad
+	    sleep 2
+	elif [ "$1" = "start" ]; then
+	    # Start minidlnad if MEDIA_PATH is set, minidlnad
+	    # is installed and not already running.
+	    if test -n "$MEDIA_PATH"  &&
+	        which minidlnad >/dev/null  &&
+		! pgrep minidlnad; then
+		    mkdir -p "$MEDIA_PATH"  ||  return 1
+		    chmod "$DIR_PERM" "$MEDIA_PATH"
+		    minidlnad -v -S -f /dev/stdin <<-EOF -R -P "$RUN/minidlnad.pid" &
+			media_dir=$MEDIA_PATH
+			port=8200
+			friendly_name=$(hostname) DLNA
+			db_dir=$MEDIA_PATH
+			inotify=yes
+			log_dir=/tmp
+			log_level=general,artwork,database,inotify,scanner,metadata,http,ssdp,tivo=off
+			EOF
+	    fi
+	elif [ "$1" = "--op" ]; then
+	    [ "$(list_processes - minidlnad)" = "" ]  &&  echo start  ||  echo stop
+	elif [ "$1" = "--status" ]; then
+	    [ "$(list_processes - minidlnad)" = "" ]  &&  echo stop  ||  echo start
+	else
+	    echo "minidlna: operation not implemented: $1" >&2
+	fi
+    }
+
+
+# Create a samba share configuration from command line parameters
+# and defaults.
+
+share_config() {
+    /usr/bin/gawk '#
+
+	#
+	# Create samba shar configuration from command line parameters.
+	#
+	#    share-config "disk:$HOME:create mask = 644"
+	#
+
+	function noctrl(s) {
+		sub(/[ \t\r\n]+$/, "", s);
+		return (s);
+		}
+
+	function trim(s) {
+		gsub(/(^ +| +$)/, "", s);
+		return (s);
+		}
+
+	function get_home_dir(user,   line, fn, x) {
+		if (have_passwd == 0) {
+			fn = "/etc/passwd";
+			while (getline line <fn > 0) {
+				split(line, x, ":");
+				home[x[1]] = x[6];
+				}
+
+			close(fn);
+			have_passwd = 1;
+			}
+
+		if (user in home)
+			return (home[user]);
+
+		printf ("user not found: %s\n", user) >>"/dev/stderr";
+		return ("/nonexistent");
+		}
+
+	function create_config(config,   i, n, p, x, y,
+			config_value, config_key, have_key, n_config,
+			T, U) {
+
+		gsub(/(^[ \t\r\n]+|[ \t\r\n]+$)/, "", config);
+		if (config == "")
+			return;
+
+		# Initialize.
+		config_key[++n_config] = "name";
+		config_key[++n_config] = "path";
+
+		# `config` is a list of colon or newline separated
+		# share options.  Prepended defaults.
+		config = "browseable = yes\n" \
+				"guest ok = no\n" \
+				"read only = no\n" \
+				"create mask = 644\n" \
+				"directory mask = 775\n" \
+				additional_defaults \
+				config;
+
+		# Compute the resulting configuration.
+		n = split(config, x, / *[:\n] */);
+		for (i = 1; i <= n; i++) {
+			p = trim(x[i]);
+			if (p == "")
+				continue;
+
+			if (match(p, /^ *([^=]+) *= *(.*)$/, y) > 0) {
+				key = y[1];
+				gsub(/ +/, " ", key);
+				key = trim(key);
+				if (! (key in have_key)) {
+					config_key[++n_config] = key;
+					have_key[key] = 1;
+					}
+
+				if (key == "valid users") {
+					q = y[2];
+					while (match(q, /(^|,) *([^ ,\/]+)\/([^, ]+)/, ad) > 0) {
+						U = ad[2] " " ad[3] "\n";
+						q = substr(q, RSTART + RLENGTH);
+						}
+
+					gsub(/\/[^, ]+/, "", y[2]);
+					}
+
+				config_value[key] = y[2];
+				}
+			# The first two entries without a `=` set
+			# the share'\''s name and path.
+			else if (config_value["name"] == "") {
+				if (p ~ /^@/) {
+					p = substr(p, 2);
+					config_value["name"] = p
+					if (mode != "accounts")
+						config_value["path"] = get_home_dir(p);
+					}
+				else
+					config_value["name"] = p;
+				}
+			else if (config_value["path"] == "")
+				config_value["path"] = p;
+			}
+
+		if (mode == "accounts")
+			print noctrl(U);
+		else {
+			# Print configuration.
+			T = "[" config_value["name"] "]\n";
+			for (i = 2; i <= n_config; i++) {
+				key = config_key[i];
+				T = T "  " key " = " config_value[key] "\n";
+				}
+
+			printf ("%s\n", T);
+			}
+		}
+
+	BEGIN {
+		USER = ENVIRON["USER"];
+
+		argi = 1;
+		while (substr(ARGV[argi], 1, 1) == "-") {
+			p = ARGV[argi];  ARGV[argi++] = "";
+			if (p == "--config")
+				mode = "config";
+			else if (p == "--accounts")
+				mode = "accounts";
+			else if (p == "--default") {
+				additional_defaults = additional_defaults ARGV[argi] "\n";
+				ARGV[argi++] = "";
+				}
+			}
+
+		if (argi >= ARGC) {
+			# Read configuration from stdin.
+			while (getline line > 0)
+				data = data line "\n";
+			}
+		else {
+			# Concatenate all parameters.
+			while (argi < ARGC) {
+				data = data " " ARGV[argi];
+				ARGV[argi++] = "";
+				}
+			}
+
+		# `data` is a list of semi-colon separated
+		# share configurations - produce and print.
+		n = split(data, x, /[ \t]*;[ \t]*/);
+		for (i = 1; i <= n; i++) {
+			p = trim(x[i]);
+			if (p != "")
+				create_config(p);
+			}
+
+		exit (0);
+		}' "$@"
+    }
+
+
+# Compute the complete smbd configuration.
+smbd_config() {
+	cat <<-EOF
+	# pkill --signal HUP smbd to reload
+	[global]
+	  workgroup = WORKGROUP
+	  # 100 kBytes of log in temporary space
+	  log file = $SMB_LOG
+	  max log size = 100
+	  logging = file
+	  log level = 2
+
+	  panic action = /usr/share/samba/panic-action %d
+	  pid directory = $RUN
+	  private dir = $RUN
+
+	  server role = standalone server
+	  map to guest = bad user
+	  guest account = $USER
+
+	EOF
+
+	if [ "$PUBLIC_SHARE_NAME" != ""  -a  "$PUBLIC_SHARE_PATH" != "" ]; then
+	    mkdir --parents "$PUBLIC_SHARE_PATH"  &&
+	      chmod "$DIR_PERM" "$PUBLIC_SHARE_PATH"
+
+	    echo "$PUBLIC_SHARE_NAME\n" \
+	    		"$PUBLIC_SHARE_PATH\n" \
+	  		"browseable = yes\n" \
+	  		"guest ok = yes\n" \
+	  		"read only = no\n" \
+	  		"create mask = 777\n" \
+	  		"directory mask = $DIR_PERM\n" \
+			"$PUBLIC_SHARE_OPT" |
+	    share_config --config
+	fi
+
+	if [ "$PRIVATE_SHARE_NAME" != ""  -a  "$PRIVATE_SHARE_PATH" != "" ]; then
+	    mkdir -p "$PRIVATE_SHARE_PATH"
+	    echo "$PRIVATE_SHARE_NAME\n" \
+	    		"$PRIVATE_SHARE_PATH\n" \
+	    		"directory mask=$DIR_PERM\n" \
+	    		"valid users=$PRIVATE_SHARE_USERNAME\n" \
+			"$PRIVATE_SHARE_OPT" |
+	    share_config --config
+	fi
+
+	if [ "$OTHER_SHARES" != "" ]; then
+	    echo "# Other shares."
+	    echo "$OTHER_SHARES" |
+	    share_config --config --default "force user = $USER"
+	fi
+    }
+
+
+
+# -------------------------------------------------------------------
+# Parse some command line options.
+while true; do
+    case "$1" in
+    "--no-otg-check")
+	NO_OTG_CHECK=y;  shift
+	;;
+
+    "--config")
+	CONFIG_FILE="$2";  shift 2
+	;;
+
+    *)
+	break;
+	;;
+    esac
+done
+
+
+
+# -------------------------------------------------------------------
+# Handle command line operations.
+
+if [ "$1" = "" ]; then
+    echo "usage: $NAME <op>" >&2
+    exit 1
+fi
+
+# bash completion functions.
+if [ "$1" = "--x-bc-options" ]; then
+    usage | awk '$1 ~ /--/ { print $1 }'; echo help
+    exit
+elif [ "$1" = "--x-bc-configure" ]; then
+    configure --x-bc-options "$THIS"
+    exit
+elif [ "$1" = "--bc" ]; then
+    _bc_code
+    exit
+fi
+
+if [ "$1" != ""  -a  "$1" != "--start" ]; then
+    # Get the command line argument, shift and exit if that
+    # fails (because the argument list is already empty).
+    cmd="$1";  shift  ||  exit 1
+
+
+    # Install / uninstall the script as systemd service.
+
+    if [ "$cmd" = "--install-otg"  -o  "$cmd" = "--install" ]; then
+	check_root
+	fn=/etc/systemd/system/$NAME.service
+	CMD_LINE=$THIS
+	if [ "$cmd" = "--install" ]; then
+	    CMD_LINE="$THIS --no-otg-check"
+	fi
+
+	if [ "$CONFIG_FILE" != "" ]; then
+	    CMD_LINE="$CMD_LINE --config $CONFIG_FILE"
+	fi
+
+	CMD_LINE="$CMD_LINE --start"
+
+	# Do not install as superuser but as calling user.
+	USER=$(logname)
+	echo Installing "$fn for user $USER."
+	cat >"$fn" <<-EOF
+		[Unit]
+		Description=OTG SMB Daemon
+		After=network-online.target
+
+		[Service]
+		Type=simple
+		ExecStart=$CMD_LINE
+		ExecStopPost=$THIS --post-stop
+		User=$USER
+		Restart=no
+
+		[Install]
+		WantedBy=multi-user.target
+		EOF
+	# Check the error code.
+	[ $? != 0 ]  &&  exit 1
+
+	# Reload _systemd_ configuration and enable the service.
+	systemctl daemon-reload
+	systemctl enable "$NAME".service
+	echo "Service command: $CMD_LINE"
+	echo "Reinstall the service after changing the script's location."
+	exit
+    elif [ "$cmd" = "--uninstall" ]; then
+	check_root
+	fn=/etc/systemd/system/$NAME.service
+	echo Stopping processes
+	systemctl stop "$NAME".service
+	echo Uninstalling "$fn"
+	systemctl disable "$NAME".service
+	rm "$fn"
+	systemctl daemon-reload
+	exit
+    elif [ "$cmd" = "--post-stop" ]; then
+	true
+	exit
+    elif [ "$cmd" = "--apt-check" ]; then
+	[ "$#" = 0 ]  &&  set samba inotify-tools minidlna hostapd dnsmasq
+	for P in $*; do
+	    dpkg-query --show "$P" >/dev/null 2>&1  &&
+	        echo "$P: ok."  ||  M="$M $P"
+	done
+	[ "$M" != "" ]  &&  echo "\nmissing packages:$M\n"
+	exit
+    elif [ "$cmd" = "--apt-get" ]; then
+	check_root
+	for PKG in $@; do
+	    shift
+	    [ "$PKG" = "-" ]  &&  break
+	    PKGLIST="$PKGLIST $PKG"
+	done
+
+	if [ "$PKGLIST" = "" ]; then
+	    echo "usage: $NAME $cmd <pkg> ... [- <bin> ...]" >&2
+	    exit 1
+	fi
+
+	for BIN in $@; do
+	    shift
+	    which "$BIN"  &&  INSTALLED="$INSTALLED $BIN"
+	    BINLIST="$BINLIST $BIN"
+	done
+
+	echo "installing:$PKGLIST"
+	echo "diabling:$BINLIST"
+	echo
+
+	apt-get install $PKGLIST  &&
+	  systemctl stop $BINLIST  &&
+	  systemctl disable $BINLIST
+	exit
+    elif [ "$cmd" = "--apt-system-update" ]; then
+	check_root
+	apt-get --yes update  &&
+	  apt-get --yes upgrade  &&  apt-get --yes dist-upgrade  &&
+	  apt-get --yes autoremove
+	exit
+    elif [ "$cmd" = "--create-share-account" ]; then
+	if [ "$#" != 2 ]; then
+	    echo "usage: $NAME <user> <directory>" >&2
+	    exit 1
+	fi
+
+	check_root
+	useradd -d "$2" -s /bin/true \
+	  -c "otg-disk share account, $(date +'%Y-%m-%d')" "$1"
+	exit
+    fi
+
+
+    #
+    # Runtime operations are executed below.
+    #
+
+    # If the command is "start" or "stop" then make that the
+    # operation and get the service name from the command line.
+# Löschen?
+#    if [ "$cmd" = "start"  -o  "$cmd" = "stop" ]; then
+#	echo "## start/stop Code"
+#	op="$cmd"
+#	cmd="$1";  shift  ||  exit 1
+#    fi
+
+
+#echo ">> $NAME $cmd $*" >&2
+    case "$cmd" in
+
+    # This starts, stops and updates the status of simple
+    # services.  $1 is the service "object" and $2 the operation
+    # to run.
+    #   - $1 can be a script or internal function.
+    #   - USB objects (disks) are always external and
+    #     operations are backgrounded (expected to be running
+    #     long).
+
+    --op)
+	OBJ="$1";  OP="$2";  shift 2  ||  exit 1
+
+	# Stop otg-disk?
+	if [ "$OBJ" = "otg-disk" -a "$OP" = "stop" ]; then
+	    kill_processes inotifywait
+	fi
+
+	if [ "$OBJ" != "${OBJ#usb.}" ]; then
+	    # USB disk operation
+	    uuid=${OBJ#usb.}
+	    if [ "$OP" = "umount" ]; then
+		umount_disk "$uuid"
+		exit
+	    fi
+
+	    ! is_mounted "$uuid"  &&  exit 1
+	    CMD="$BINDIR/$OBJ"
+	    ( "$CMD" "$OP";  OPLIST=$("$CMD" --op) 
+		for frag in $OPLIST umount; do
+		    touch "$SYSCTRL/$OBJ.$frag"
+		done
+	       ) &
+
+	    exit
+	fi
+
+	T=$(type "$OBJ" | head -1)
+	[ "$T" = "${T%%function}" ]  &&  CMD="$BINDIR/$OBJ"  ||  CMD="$OBJ"
+	"$CMD" "$OP"
+	OPLIST=$("$CMD" --op)
+	for frag in $OPLIST; do
+	    touch "$SYSCTRL/$OBJ.$frag"
+	done
+	;;
+
+    --clean)
+	pkill --signal TERM --full "inotifywait.*$SYSCTRL"
+	sudo pkill --signal TERM --full "smbd.*$SMB_CONF"
+	;;
+
+    --enable)
+	sudo systemctl enable "$NAME".service
+	;;
+
+    --disable)
+	sudo systemctl disable "$NAME".service
+	;;
+
+    --wlan)
+	wlan --status
+	;;
+
+    --configure)
+	configure "$@" "$0"
+	exit $?
+	;;
+
+    --smb.conf)
+	smbd_config
+	echo "$OTHER_SHARES" | share_config --accounts  
+	;;
+
+    --show-config)
+	set | print_config "$THIS" "$@"
+	;;
+
+    --sys-config)
+	sys_config "$THIS" "$@"
+	;;
+
+    --mkdirs)
+	sys_config "$THIS" --mkdirs "$@"
+	;;
+
+    --ps|--list)
+	list_processes - $1
+	;;
+
+    --tcp|--server)
+	list_servers $1
+	;;
+
+    --scan-files)
+	scan_files . *
+	;;
+
+    --mount)	# Parameter: disk, partition, uuid
+	if [ "$#" = "0" ]; then
+	    list_mounts
+	    exit
+	elif [ "$#" != "3" ]; then
+	    echo "$NAME --mount: bad number of parameters" >&2
+	    exit 1
+	fi
+
+	CMD="$BINDIR/usb.$3"
+	if [ ! -x "$CMD" ]; then
+	    echo "$NAME: no such usb handler: $CMD" >&2
+	    exit 1
+	elif mount_disk "$1" "$2" "$3"; then
+	    "$CMD" --mount "$3"
+	    LIST=$("$CMD" --op "$3")  ||
+	      { umount_disk "$3"; echo "$NAME: not mounted: $3"; exit; }
+
+	    for F in $LIST umount; do
+		touch "$SYSCTRL/usb.$3.$F"
+	    done
+	fi
+	;;
+
+    --umount)	# Parameter: uuid
+	umount_disk "$1"
+	;;
+
+    --tail)
+	pid=$(cat "$MYPID_FILE")
+	tail -f "/proc/$pid/fd/2"
+	;;
+
+    --logfile)
+	pid=$(cat "$MYPID_FILE")
+	ls -l "/proc/$pid/fd/2" | sed 's/.*-> *//'
+	;;
+
+    --reload|--restart)
+	kill -"$RESTART_SIGNAL" $(cat "$MYPID_FILE")
+	;;
+
+    --reopen-log)
+	kill -"$REOPENLOG_SIGNAL" $(cat "$MYPID_FILE")
+	;;
+
+    --start)
+        # Just pass through.
+    	;;
+
+    --stop)
+	kill_processes inotifywait
+	;;
+
+    --status)
+	is_running  &&  echo "running."  ||  echo "not running."
+	;;
+
+    --usage|--help|help)
+	usage
+	;;
+
+    --version)
+	echo "$NAME" "$VERSION"
+	;;
+
+    *)
+	echo "$NAME: undefined operation or service: $cmd" >&2
+	exit 1
+	;;
+
+    esac
+    # [ "$cmd" != "--start" ]  &&  exit 0
+    exit 0
+fi
+
+
+if [ "$1" != "--start" ]; then
+    echo "$NAME: script error, cmd= $1" >&2
+    exit 1
+fi
+
+
+# -------------------------------------------------------------------
+# otg-disk starts here.
+
+open_logfile
+
+
+# Create a temporary directory and set pi as the owner.
+sudo mkdir -p "$RUN"  ||  exit 1
+sudo chown "$USER" "$RUN"
+
+
+# Check if certain services are running and stop them.
+SYSTEM_SERVICES=$(echo "$SYSTEM_SERVICES $OTG_STOP_SERVICES" | unify_list)
+for S in $SYSTEM_SERVICES; do
+    systemctl is-active "$S" >/dev/null  &&  SVC="$SVC $S"
+done
+SVC=$(echo $SVC)
+
+echo $SVC >"$RUN/system-services"
+if [ "$SVC" != "" ]; then
+    echo "$NAME: stopping services: $SVC"
+    sudo systemctl stop $SVC
+fi
+
+
+# Start button monitor.
+if [ "$PHAT_CONTROLLER" != "" ]; then
+    $PHAT_CONTROLLER "$SYSCTRL" &
+    echo $! >"$RUN/$(basename $PHAT_CONTROLLER).pid"
+fi
+
+
+# -------------------------------------------------------------------
+# Load g_ether if OTG_DEV_ADDR is set, dwc2 is active, g_ether
+# is not already loaded and only the Linux USB hub is present.
+
+if [ "$OTG_DEV_ADDR" != "" ]  &&
+    grep -q '^ *dtoverlay *= *dwc2' /boot/config.txt  &&
+    ! lsmod | grep -qE '(g_ether|g_multi)'  &&
+    [ "$(lsusb | wc -l)" = "1" ]; then
+	echo loading g_ether
+	sudo modprobe g_ether dev_addr="$OTG_DEV_ADDR"
+	NO_OTG_CHECK="y"
+fi
+
+
+
+#
+# When we are about to start the file server check if we are
+# connected OTG - if usb0 is configured or not.  If not we exit.
+#
+
+if [ "$NO_OTG_CHECK" != "" ]; then
+    # --no-otg-check was on the command line or g_ether was just
+    # loaded.
+    x=
+elif [ "$1" = "" ]; then
+    if tty -s; then
+	# Skip the check is started by the user.
+	echo "runnnig otg-disk, press CTRL+C to terminate."
+    else
+	# Give the network some time to come up.
+	for I in $(seq 1 10); do
+	    addr=$(ifconfig usb0 |
+		awk '$1 ~ /inet|inet6/ { print $2; exit }')
+
+	    [ "$addr" != "" ]  &&  break
+	    sleep 3
+	done
+
+	if [ "$addr" = "" ]; then
+	    echo usb0 is not configured, terminating
+	    exit 0
+	fi
+	echo usb0 configured, "$I" cycles
+    fi
+fi
+
+
+# Start the USB-disk monitor if g_ether is not loaded or
+# more than one USB device is found.
+
+if ! lsmod | grep -qE '(g_ether|g_multi)'  ||
+    [ "$(lsusb | wc -l)" != "1" ]; then
+	echo starting USB monitor
+	usb_monitor "$THIS" &
+fi
+
+
+# Some more initialization.
+rfkill unblock wlan
+
+if [ "$AP_AUTOSTART" = "yes" ]; then
+    autostart_ap &
+fi
+
+for S in $START_SERVICES; do
+    CMD=$(name_to_cmd "$S")
+    "$CMD" start
+done
+
+
+# -------------------------------------------------------------------
+# Launch the two service processes: smbd and sys_monitor
+
+
+
+# Create the public share directory and set the permssions.
+mkdir --parents "$PUBLIC_SHARE_PATH"  &&
+  chmod "$DIR_PERM" "$PUBLIC_SHARE_PATH"
+
+
+# Create the smbd configuration.
+rm -f "$SMB_CONF"
+rm -f "$SMB_LOG"
+if [ ! -f "$SMB_CONF" ]; then
+    smbd_config >"$SMB_CONF"
+fi
+
+
+# Store our own pid for sigterm_handler.
+echo $$ >"$MYPID_FILE"
+
+# Catch signals to terminate subprocesses and finish.
+TRAP_SIGNALS="0 1 2 3 15"
+trap "sigterm_handler; exit 0" $TRAP_SIGNALS
+
+# Catch SIGPWR to restart.
+trap "restart_handler" "$RESTART_SIGNAL"
+
+# Catch SIGXCPU to reopen log.
+trap reopenlog_handler "$REOPENLOG_SIGNAL"
+
+
+# Start the file server.
+sudo pkill --signal TERM --full "smbd.*$SMB_CONF"
+echo Starting smbd ...
+sudo /usr/sbin/smbd --no-process-group \
+	-s "$SMB_CONF"
+
+if [ "$PRIVATE_SHARE_NAME" != ""  -a  "$PRIVATE_SHARE_PASSWORD" != "" ]; then
+    printf "${PRIVATE_SHARE_PASSWORD}\n${PRIVATE_SHARE_PASSWORD}\n" |
+    sudo smbpasswd -c "$SMB_CONF" -L -s -a "$PRIVATE_SHARE_USERNAME"
+fi
+
+if [ "$OTHER_SHARES" != "" ]; then
+    echo "$OTHER_SHARES" | share_config --accounts |
+    while read user pass x; do
+	[ "$user" = "" ]  &&  continue
+	echo "adding user $user ..."
+	printf "${pass}\n${pass}\n" |
+	sudo smbpasswd -c "$SMB_CONF" -L -s -a "$user"
+    done
+fi
+
+
+
+if [ "$OTG_FAILSAFE" = "yes" ]; then
+    sudo systemctl disable "$NAME".service
+fi
+
+# Start the inotify daemon.
+echo Starting sys-monitor ...
+sys_monitor "$SYSCTRL" "$THIS" wlan $SERVICE_LIST
+
+
+exit 1
+

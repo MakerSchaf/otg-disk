@@ -1,0 +1,142 @@
+#!/bin/sh
+#
+
+#
+# Change `dtoverlay=dwc2` option from script.
+#
+#  usage: switch-dwc on|off|status|file
+#
+# **otg-disk extension
+#
+
+
+edit_boot_config() {
+    if [ "$1" != "" ]; then
+    	sudo cp /boot/config.txt /boot/config.txt~
+	SUDO=sudo
+    fi
+
+    $SUDO /usr/bin/gawk '
+	function __getarg(   p) {
+		p = ARGV[argi + 1];
+		if (p == "") {
+			printf ("missing parammeter: %s\n", ARGV[argi]) >>STDERR;
+			exit (1);
+			}
+
+		ARGV[argi] = ARGV[argi + 1] = "";
+		argi += 2;
+
+		return (p);
+		}
+
+	BEGIN {
+		STDERR = "/dev/stderr";
+		argi = 1;
+		status = "inactive";
+
+		DEST = FN = "/boot/config.txt";
+		if (ARGV[argi] == "-w")
+			DEST = __getarg();
+		else if (ARGV[argi] == "-f")
+			DEST = FN = __getarg();
+
+		while (getline line <FN > 0) {
+			config[++count] = line;
+
+			if (line == "[all]") {
+				in_section = 1;
+				section_start = count;
+				}
+			else if (line ~ /^\[/)
+				in_section = 0;
+
+			if (in_section) {
+				if (line ~ /^(# *)?dtoverlay=dwc2/) {
+					lineno = lineno " " count;
+					status = (line ~ /^#/)? "off": "on";
+					}
+				}
+			}
+
+		if (argi >= ARGC) {
+			print status;
+			exit (0);
+			}
+
+		switch_to = ARGV[argi];
+		ARGV[argi++] = "";
+
+		if (switch_to == "off") {
+			# Disable all occurences.
+			n = split(lineno, x, " ");
+			for (i = 1; i <= n; i++) {
+				k = x[i];
+				config[k] = "# " config[k];
+				}
+			}
+		else if (switch_to = "on") {
+			n = split(lineno, x, " ");
+			if (n > 0) {
+				# Enable the last occurence.
+				k = x[n];
+				sub(/^# */, "", config[k]);
+				}
+			else {
+				# Create the entry.
+				if (section_start == 0) {
+					# Add an section.
+					if (config[count] != "")
+						config[++count] = "";
+
+					config[++count] = "[all]";
+					section_start = count;
+					}
+
+				# Insert the entry behind the section start.
+				config[section_start] = config[section_start] "\n" \
+					"dtoverlay=dwc2";
+				}
+			}
+		else {
+			printf ("bad parameter: %s\n", switch_to) >"/dev/stderr";
+			exit (1);
+			}
+
+		for (i = 1; i <= count; i++)
+			printf ("%s\n", config[i]) >DEST;
+
+		close (DEST);
+		exit (0);
+		}' "$@"
+    }
+
+
+case "$1" in
+    --status)
+	edit_boot_config
+	;;
+
+    --op)
+	status=$(edit_boot_config)
+	[ "$status" = "on" ]  &&  echo off  ||  echo on
+	;;
+
+    on)
+	edit_boot_config on
+	;;
+
+    off)
+	edit_boot_config off
+	;;
+
+    "")
+	echo "usage: $0 [--status|on|off]" >&2
+	;;
+    *)
+	echo "$(basename $0): operation not implemented: $1" >&2
+	;;
+esac
+
+exit 0
+

@@ -1,0 +1,422 @@
+<HTML>
+<HEAD>
+  <!-- software: muc 1.1.2 -->
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <TITLE>USB Disks</TITLE>
+  <LINK HREF="index.html" REL="home">
+<STYLE TYPE="text/css">
+    A, A:visited { text-decoration: none; color: blue; }
+    A:hover { color: #00FF00; }
+    BODY { padding: 1em; margin: auto; max-width: 700; }
+    BODY, TD, TH { font-size: 11pt; line-height: 1.5;
+        font-family: Verdana, Georgia, Helvetica, Arial, sans-serif;
+        }
+    PRE.code { margin-left: 2em; padding: .5em; background: #F0F0F0; color: #0000FF;
+	 line-height: 1.2;
+        font-size: 90%; overflow-x: auto; overflow-y: auto;
+        font-family: "courier new", monospace;
+        border: 1px solid black; border-radius: 0px; border: 1px solid grey;
+        }
+    CODE { font-family: "courier new", monospace; color: #0000FF;
+        font-size: 90%; padding: .2em .4em;
+        background: #F0F0F0; border-radius: 6px;
+        vertical-align: middle;
+        }
+    TABLE { margin-left: 2em; border-spacing: 0px; }
+    TD, TH { border: 1px dotted gray; padding-left: .5em; padding-right: .5em; }
+    BLOCKQUOTE { margin-left: 2em; border-left: 2px solid blue; padding-left: 1em; }
+    DIV.navigator { padding: 2px; font-size: 80%; background: #F0FFF0; border-bottom: 1px solid blue; }
+    DIV.lastmod { font-size: 80%; }
+    DIV.introduction { font-size: 90%; margin: 0 2em 0 2em; }
+</STYLE>
+<LINK HREF="styles.css" REL="stylesheet" TYPE="text/css">
+<STYLE TYPE="text/css">
+DIV.navigator { background: #F0FFF0; }
+</STYLE>
+<SCRIPT SRC="keyboard.js" TYPE="text/javascript"></SCRIPT>
+</HEAD>
+<BODY>
+<NAV><DIV ALIGN="RIGHT" CLASS="navigator"><A HREF="index.html" REL="Home">Home</A>
+| <A HREF="contents.html" REL="Contents">Contents</A>
+| <A HREF="safety-instructions.html" REL="first">F</A><A HREF="http-interface.html" REL="prev">P</A><A HREF="reference.html" REL="next">N</A><A HREF="reference.html" REL="last">L</A></DIV></NAV>
+<DIV ALIGN="RIGHT" CLASS="lastmod">Last modified: 2023-11-16 07:18</DIV>
+<P><EM>otg-disk</EM> can monitor USB disks as they are connected to the
+ Raspberry, mount them automatically and offer available operations
+ through the <EM>samba</EM> server's system control directory.  But all of
+ this needs to be scripted.  This document explains how it works.</P>
+<H1><P>USB Disks</P></H1>
+<H3><P>Preparation</P></H3>
+<P>Before you start with USB disks (or other devices) you must
+understand that USB usage and on-the-go networking (or other OTG
+functions) are mutually exclusive: you really can't have them both
+at the same time.  OTG is activated by</P>
+<OL>
+<LI>Loading the <EM>dwc2</EM> overlay (<CODE>dtoverlay=dwc2</CODE>) in
+ <EM>/boot/config.txt</EM>, and</LI>
+<LI>loading the kernel modules <EM>g_ether</EM> or <EM>g_multi</EM> during of after
+ system boot.</LI>
+</OL>
+<P>Depending on your USB setup, USB may work with <EM>dwc2</EM> enabled or not
+but you should disable <EM>dwc2</EM> to be on the safe side.  (My personal
+experience: if <EM>dwc2</EM> is loaded then devices connected to the
+Raspberry's (Zero) USB port don't work anymore.  Connecting them via
+an external USB hub may work or not.)  If you want to try USB with
+<EM>dwc2</EM></P>
+<UL>
+<LI>connect a USB hub to the Raspberry,</LI>
+<LI>boot the device, and</LI>
+<LI>check <EM>otg-disk</EM>'s logfile (<CODE>./otg-disk --tail</CODE>): if it says
+ <CODE>starting USB monitor</CODE> then <EM>otg-disk</EM> is ready for USB devices.</LI>
+<LI>The final test is to connect a USB disk.  If USB is working (and
+ not impacted by <EM>dwc2</EM>) <EM>otg-disk</EM> writes a line like
+ <CODE>usb-monitor: detected sda sda1 2616-554A</CODE> (the last
+ parameter is the UUID as reported by <EM>lsblk</EM>) into its log.</LI>
+</UL>
+<P>If necessary you can edit <EM>/boot/config.txt</EM> but there's also the
+script <A HREF="switch-dwc2" TARGET="_blank" TITLE="switch-dwc2"><EM>switch-dwc2</EM></A> doing that for you.</P>
+<PRE CLASS="code">$ ./switch-dwc2 --status</PRE>
+<P>displays the current status.  If its <CODE>on</CODE> it must be turned <CODE>off</CODE>:</P>
+<PRE CLASS="code">$ ./switch-dwc2 off</PRE>
+<P>Notice that <EM>switch-dwc2</EM> silently goes to superuser mode when
+editing the file.  An extra <EM>sudo</EM> is not required.  If you place the
+script in <EM>otg-disk</EM>'s directory you'll also find the appropriate
+on/off-action in the system control directory.</P>
+<P>Don't forget to reboot to de/activate the overlay after changing
+<EM>config.txt</EM>.</P>
+<H3><P>Scripting</P></H3>
+<P><EM>otg-disk</EM> expects scripts to be around to implement any kind of
+interactions you want to have and does also not automatically mount
+disks that are connected.  When it find disks (better: partitions)
+connected to USB, <EM>otg-disk</EM> checks first if the file <CODE>usb.<EM>uuid</EM></CODE>
+exists, where <EM>UUID</EM> is the partition's UUID identifier as reported
+by <CODE>lsblk --raw --output NAME,MAJ:MIN,UUID</CODE>.</P>
+<P>So the first thing to do for a new disk is to pick the UUID(s) from
+<EM>otg-disk</EM>'s logfile (<CODE>./otg-disk --tail</CODE>).  They are reported in
+<EM>usb-monitor</EM>'s notifications:</P>
+<PRE CLASS="code">usb-monitor: detected sda sda2 ACB5-7A23</PRE>
+<P>The last value is the <EM>/dev/sda2</EM>'s UUID.</P>
+<P>If the required file exists in <EM>otg-disk</EM>'s directory and is
+executable</P>
+<OL>
+<LI>the partition is mounted on <CODE>/media/$USER/<EM>uuid</EM></CODE>, and</LI>
+<LI>the script is run with <STRONG>--mount</STRONG> as first and the UUID as
+ second command line argument.</LI>
+</OL>
+<P>The script can then do whatever might need to be done when the disk
+is mounted.</P>
+<P>After that <EM>otg-disk</EM> queries the available operations by reading
+the output from <CODE><EM>script</EM> --op <EM>uuid</EM></CODE>.  An action file is created
+in <CODE>$SYSTRCL</CODE> for each output word.  If the <STRONG>--op</STRONG> operation
+returns a non-zero exit code the partition is immediately unmounted.
+The partition remains online until the umount file is deleted.  In
+that case <CODE><EM>script</EM> --umount <EM>uuid</EM></CODE> is executed and the disk is
+unmounted.  In between any implemented operation can be triggered by
+deleting the respective action file in <CODE>$SYSCTRL</CODE>.</P>
+<H3><P>Examples</P></H3>
+<P>The following script demonstrates the scheme.</P>
+<PRE CLASS="code">#!/bin/sh
+#
+
+NAME=$(basename $0)
+UUID=${NAME#usb.}
+MNT="/media/$USER/$UUID"
+
+bin=$(dirname $0)
+
+case "$1" in
+    --mount)
+        "$bin/beep"
+        ;;
+
+    --umount)
+        ;;
+
+    --op)
+        echo test backup
+        ;;
+
+    test)
+        echo "$NAME: test operation" &gt;&amp;2
+        ;;
+
+    backup)
+        echo "$NAME: backup operation" &gt;&amp;2
+        sleep 2
+        "$bin/beep" 2
+        ;;
+
+    *)
+        echo $NAME: operation not implemented: "$1" &gt;&amp;2
+        exit 1
+        ;;
+esac
+exit 0</PRE>
+<P>It makes a sound (asssuming script and hardware is available) when
+the partition is mounted, implements two actions (test and backup)
+and makes two beeps after the simulated backup operation has
+finished.</P>
+<P>The following script implements an automatic backup on mount.</P>
+<PRE CLASS="code">#!/bin/sh
+#
+
+
+NAME=$(basename $0)
+UUID=${NAME#usb.}
+MNT="/media/$USER/$UUID"
+
+bin=$(dirname $0)
+
+case "$1" in
+    --mount)
+        # Automatically create a backup.
+        "$bin/beep"
+        sh /media/pi/0C39-72F7/moba/bin/moba.sh create
+        "$bin/beep" 2
+        ;;
+
+    --umount)
+        # "$bin/beep"
+        ;;
+
+    --op)
+        # An exit code != 0 makes otg-disk unmount us.
+        exit 1
+        ;;
+
+    *)
+        echo $NAME: operation not implemented: "$1" &gt;&amp;2
+        exit 1
+        ;;
+esac
+exit 0</PRE>
+<P>The script issues a beep to signal that the partition is mounted and
+the following backup script <EM>moba.sh</EM> started (don't unplug the
+device).  There are two more beeps when the script finished (unplug
+now) and since <STRONG>--op</STRONG> returns a non-zero exit code the partition
+is unmounted.  (Any <STRONG>--umount</STRONG> action would be triggered too, so
+it would also be possible to move the double beep there.)</P>
+<H3><P>Commands for USB mounts</P></H3>
+<P><EM>otg-disk</EM> implements two commands for USB mounts:</P>
+<DL>
+<DT><STRONG>--mount</STRONG> :</DT>
+<DD>List UUID and mount point of partitions, which are mounted below
+<EM>/media/$USER</EM>.</DD>
+<DT><STRONG>--umount</STRONG> <EM>uuid</EM> :</DT>
+<DD>Unmount the partition <EM>uuid</EM> if it is mounted below <EM>/media/$USER</EM>.</DD>
+</DL>
+<P>Notice, that the partitions on which <EM>otg-disk</EM> can works, were not
+necessarily mounted by <EM>otg-disk</EM>.  They are just in the right
+location.  E.g., Linux file-managers may use the same location.</P>
+</BODY>
+<!-- source: text/markdown
+
+ _otg-disk_ can monitor USB disks as they are connected to the
+ Raspberry, mount them automatically and offer available operations
+ through the _samba_ server's system control directory.  But all of
+ this needs to be scripted.  This document explains how it works.
+
+
+# USB Disks
+
+### Preparation
+
+Before you start with USB disks (or other devices) you must
+understand that USB usage and on-the-go networking (or other OTG
+functions) are mutually exclusive: you really can't have them both
+at the same time.  OTG is activated by
+
+ 1. Loading the _dwc2_ overlay (`dtoverlay=dwc2`) in
+    _/boot/config.txt_, and
+ 2. loading the kernel modules *g_ether* or *g_multi* during of after
+    system boot.
+
+Depending on your USB setup, USB may work with _dwc2_ enabled or not
+but you should disable _dwc2_ to be on the safe side.  (My personal
+experience: if _dwc2_ is loaded then devices connected to the
+Raspberry's (Zero) USB port don't work anymore.  Connecting them via
+an external USB hub may work or not.)  If you want to try USB with
+_dwc2_
+
+ - connect a USB hub to the Raspberry,
+ - boot the device, and
+ - check _otg-disk_'s logfile (`./otg-disk --tail`): if it says
+   `starting USB monitor` then _otg-disk_ is ready for USB devices.
+ - The final test is to connect a USB disk.  If USB is working (and
+   not impacted by _dwc2_) _otg-disk_ writes a line like
+   `usb-monitor: detected sda sda1 2616-554A` (the last
+   parameter is the UUID as reported by _lsblk_) into its log.
+
+If necessary you can edit _/boot/config.txt_ but there's also the
+script [_switch-dwc2_][1] doing that for you.
+
+    $ ./switch-dwc2 --status
+
+displays the current status.  If its `on` it must be turned `off`:
+
+    $ ./switch-dwc2 off
+
+Notice that _switch-dwc2_ silently goes to superuser mode when
+editing the file.  An extra _sudo_ is not required.  If you place the
+script in _otg-disk_'s directory you'll also find the appropriate
+on/off-action in the system control directory.
+
+Don't forget to reboot to de/activate the overlay after changing
+_config.txt_.
+
+
+### Scripting
+
+_otg-disk_ expects scripts to be around to implement any kind of
+interactions you want to have and does also not automatically mount
+disks that are connected.  When it find disks (better: partitions)
+connected to USB, _otg-disk_ checks first if the file ``usb.*uuid*``
+exists, where _UUID_ is the partition's UUID identifier as reported
+by `lsblk --raw --output NAME,MAJ:MIN,UUID`.
+
+So the first thing to do for a new disk is to pick the UUID(s) from
+_otg-disk_'s logfile (`./otg-disk --tail`).  They are reported in
+_usb-monitor_'s notifications:
+
+    usb-monitor: detected sda sda2 ACB5-7A23
+
+The last value is the _/dev/sda2_'s UUID.
+
+If the required file exists in _otg-disk_'s directory and is
+executable
+
+ 1. the partition is mounted on ``/media/$USER/_uuid_``, and
+ 2. the script is run with **--mount** as first and the UUID as
+    second command line argument.
+
+The script can then do whatever might need to be done when the disk
+is mounted.
+
+After that _otg-disk_ queries the available operations by reading
+the output from ``_script_ --op _uuid_``.  An action file is created
+in `$SYSTRCL` for each output word.  If the **--op** operation
+returns a non-zero exit code the partition is immediately unmounted.
+The partition remains online until the umount file is deleted.  In
+that case ``_script_ --umount _uuid_`` is executed and the disk is
+unmounted.  In between any implemented operation can be triggered by
+deleting the respective action file in `$SYSCTRL`.
+
+
+### Examples
+
+The following script demonstrates the scheme.
+
+```
+    #!/bin/sh
+    #
+    
+    NAME=$(basename $0)
+    UUID=${NAME#usb.}
+    MNT="/media/$USER/$UUID"
+    
+    bin=$(dirname $0)
+    
+    case "$1" in
+        --mount)
+            "$bin/beep"
+            ;;
+    
+        --umount)
+            ;;
+    
+        --op)
+            echo test backup
+            ;;
+    
+        test)
+            echo "$NAME: test operation" &2
+            ;;
+    
+        backup)
+            echo "$NAME: backup operation" &2
+            sleep 2
+            "$bin/beep" 2
+            ;;
+    
+        *)
+            echo $NAME: operation not implemented: "$1" &2
+            exit 1
+            ;;
+    esac
+    exit 0
+```
+
+It makes a sound (asssuming script and hardware is available) when
+the partition is mounted, implements two actions (test and backup)
+and makes two beeps after the simulated backup operation has
+finished.
+
+The following script implements an automatic backup on mount.
+
+```
+    #!/bin/sh
+    #
+    
+    
+    NAME=$(basename $0)
+    UUID=${NAME#usb.}
+    MNT="/media/$USER/$UUID"
+    
+    bin=$(dirname $0)
+    
+    case "$1" in
+        --mount)
+            # Automatically create a backup.
+            "$bin/beep"
+            sh /media/pi/0C39-72F7/moba/bin/moba.sh create
+            "$bin/beep" 2
+            ;;
+    
+        --umount)
+            # "$bin/beep"
+            ;;
+    
+        --op)
+            # An exit code != 0 makes otg-disk unmount us.
+            exit 1
+            ;;
+    
+        *)
+            echo $NAME: operation not implemented: "$1" &2
+            exit 1
+            ;;
+    esac
+    exit 0
+```
+
+The script issues a beep to signal that the partition is mounted and
+the following backup script _moba.sh_ started (don't unplug the
+device).  There are two more beeps when the script finished (unplug
+now) and since **--op** returns a non-zero exit code the partition
+is unmounted.  (Any **--umount** action would be triggered too, so
+it would also be possible to move the double beep there.)
+
+
+### Commands for USB mounts
+
+_otg-disk_ implements two commands for USB mounts:
+
+ : **--mount** :
+  List UUID and mount point of partitions, which are mounted below
+  _/media/$USER_.
+
+ : **--umount** _uuid_ :
+  Unmount the partition _uuid_ if it is mounted below _/media/$USER_.
+
+Notice, that the partitions on which _otg-disk_ can works, were not
+necessarily mounted by _otg-disk_.  They are just in the right
+location.  E.g., Linux file-managers may use the same location.
+
+
+ [1]: switch-dwc2 (switch-dwc2)
+
+
+
+
+-->
+</HTML>
