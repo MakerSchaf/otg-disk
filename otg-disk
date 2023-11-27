@@ -151,7 +151,7 @@ export MONITOR_LOG=yes
 # The phat-controller handles buttons from the Cytron maker phat
 # and converts that into file operations.  You don't have that
 # script.
-PHAT_CONTROLLER="$BINDIR/phat-controller"
+#PHAT_CONTROLLER="$BINDIR/phat-controller"
 
 # otg-disk's pid is stored here.
 MYPID_FILE="$RUN/$NAME.pid"
@@ -625,7 +625,7 @@ sys_config() {
 				add( "" );
 
 				# Services we know.
-				n = split("samba:smbd nmbd,inotifytools,minidlna:minidlna" \
+				n = split("samba:smbd nmbd,inotify-tools,minidlna:minidlna" \
 						",hostapd:hostapd,dnsmasq:dnsmasq",
 						x, / *, */);
 
@@ -635,8 +635,10 @@ sys_config() {
 				for (i = 1; i <= n; i++) {
 					split(x[i], detail, / *: */);
 					if (detail[1] in missing) {
-						add( sprintf ("sudo %s --apt-get %s -- %s", this,
-							detail[1], detail[2]) );
+						add( sprintf ("sudo %s --apt-get %s %s%s", this,
+							detail[1],
+							detail[2] != ""? "- ": "",
+							detail[2]) );
 						}
 					}
 				}
@@ -756,7 +758,7 @@ configure() {
 
 		if (assumeYes == 0) {
 			cmd = sprintf ("diff --color=always %s %s | less -XRF", sq(bkp), sq(fn));
-			printf ("%s\n\n", cmd);
+			#printf ("%s\n\n", cmd);
 			system(cmd);
 			printf ("\nContinue? [y/N]: ")
 			getline line;
@@ -2271,12 +2273,16 @@ if [ "$1" != ""  -a  "$1" != "--start" ]; then
 	done
 
 	echo "installing:$PKGLIST"
-	echo "diabling:$BINLIST"
+	echo "disabling:$BINLIST"
 	echo
 
-	apt-get install $PKGLIST  &&
-	  systemctl stop $BINLIST  &&
-	  systemctl disable $BINLIST
+	if [ "$BINLIST" != "" ]; then
+	    apt-get --yes install $PKGLIST  &&
+	      systemctl stop $BINLIST  &&
+	      systemctl disable $BINLIST
+	else
+	    apt-get --yes install $PKGLIST
+	fi
 	exit
     elif [ "$cmd" = "--apt-system-update" ]; then
 	check_root
