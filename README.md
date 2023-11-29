@@ -29,5 +29,10 @@ Although _otg-disk_ is a Linux shell script it will only work on
 Raspberry Pis because it makes use of password-free _sudo_ when
 needed.
 
+When you have issues connection by USB network check if your host's
+interface is set for "local-link" (instead of "dhcp") configuration.
+Notice also that it might take 90 seconds from power-on to USB
+network.
+
  [1]: safety-instructions.html (Safety Instructions)
 

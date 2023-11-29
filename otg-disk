@@ -46,6 +46,9 @@ fi
 # MAC address in case g_ether is loaded here.
 OTG_DEV_ADDR="aa:bb:cc:dd:ee:f1"
 
+# Use this fixed IP address instead of nmcli zeroconf or other.
+OTG_IP_ADDR="169.254.233.90"
+
 
 # Name and path of public samba share.
 PUBLIC_SHARE_NAME="pub"
@@ -1310,26 +1313,78 @@ kill_processes() {
 
 
 
-# kill_process <piddir> <pidfile> <procname>
-# kill_process() {
-# 	# The process name default to the pid filename.
-# 	procname="$3"
-# 	[ "$procname" = "" ]  &&  procname="$2"
-# 
-# 	# Check if the pidfile exist.
-# 	pidfile="$1/$2.pid"
-# 	[ ! -f "$pidfile" ]  &&  return
-# 
-# 	if [ "$procname" = "-" ]; then
-# 		kill -TERM $(cat "$pidfile")
-# 	else
-# 		# This verifies the pid against the process name and
-# 		# terminates the process if they match.
-# 		pkill -TERM --pidfile "$pidfile" "$procname"
-# 	fi
-# 	return
-# }
-# 
+# -------------------------------------------------------------------
+# USB network for Bookworm.
+
+configure_usb_network() {
+	# This is our interface.
+	iface=usb0
+
+	# Is there a USB interface at all?
+	ST=`ifconfig "$iface" |
+	    awk '
+		BEGIN { ST = "ERR" }
+		$0 ~ /^usb[0-9]: / { ST = "OK" }
+		$1 ~ /^inet[6]?/ { ST = "IP" }
+		END { print ST }'`
+	if [ "$ST" = "ERR" ]; then
+	    echo "no USB interface found."
+	    return
+	elif [ "$ST" = "IP" ]; then
+	    echo "USB interface already configured."
+	    return
+	elif [ "$ST" != "OK" ]; then
+	    echo "USB detection error: $ST"
+	    return
+	fi
+
+	version=$(lsb_release --release | awk '/^Release:/ { print $2; exit }')
+	if [ "$version" != ""  -a  "$version" -ge "12" ]; then
+	    echo "raspbian/$version detected: configuring $iface"
+
+	    if [ "$OTG_IP_ADDR" != "" ]; then
+	        echo "using static IP: $OTG_IP_ADDR"
+		sudo ifconfig "$iface" "$OTG_IP_ADDR" netmask 255.255.0.0 up
+		return
+	    fi
+
+	    # Check if configuration exists and delete them.
+	    N=$(ls -1l /etc/NetworkManager/system-connections/${iface}[.-]* 2>/dev/null |
+		wc -l)
+	    if [ "$N" != 0 ]; then
+		sudo rm /etc/NetworkManager/system-connections/${iface}[.-]*
+		sudo nmcli con reload
+	    fi
+
+	    # Configure a DHCP and a zeroconf profile.
+	    # See https://forums.raspberrypi.com/viewtopic.php?t=358527
+
+	    # DHCP
+	    if [ "$OTG_ADD_DHCP" = "yes" ]; then
+		sudo nmcli con add \
+		  con-name "$iface"-dhcp \
+		  ifname "$iface" \
+		  type ethernet \
+		  connection.autoconnect-priority 100 \
+		  connection.autoconnect-retries 2
+	    fi
+
+	    # zeroconf
+	    sudo nmcli con add \
+	      con-name "$iface"-linklocal \
+	      type ethernet \
+	      ifname "$iface" \
+	      connection.autoconnect-priority 50 \
+	      connection.autoconnect-retries 0 \
+	      ipv4.link-local enabled \
+	      ipv4.method link-local
+
+	    # Bring the interface up.
+	    sudo nmcli con reload
+	    sudo nmcli device up usb0 >/dev/null 2>&1 &
+	fi
+    }
+
 
 
 # -------------------------------------------------------------------
@@ -1647,9 +1702,6 @@ sys_monitor() {
 		$2 == "DELETE" {
 			_dir = $1;
 			fn = $3;
-			# if (fn ~ /no-(reboot|shutdown)/)
-			#	;
-			# else
 
 			if (substr(fn, 1, 1) == ".") {
 				delete _have_lockfile[fn];
@@ -1675,18 +1727,6 @@ sys_monitor() {
 
 				run(x[1], x[2]);
 				}
-			#else if (substr(fn, 1, 3) != "no-") {
-			#	printf ("%s: `no-`-branch: %s\n", program, fn) >>STDERR;
-			#	start(fn);
-			#	if (fn !~ /^wlan\./)
-			#		touch("no-" fn);
-			#	}
-
-			# else {
-			#	fn = substr(fn, 4);
-			#	stop(fn);
-			#	touch(fn);
-			#	}
 			else {
 				printf ("%s: unhandled operation: %s\n", program, fn) >>STDERR;
 				}
@@ -1704,22 +1744,7 @@ sys_monitor() {
 			_have_lockfile[ substr(fn, 2) ] = 1;
 
 			fflush();
-			}
-
-		# $2 == "MOVED_FROM" {
-		#	_dir = $1;
-		#	n1 = $3;
-		#	getline;  if ($2 != "MOVED_TO") next;  n2 = $3;
-		#	if (substr(n1, 1, 3) == "no-") {
-		#		svc = substr(n1, 4);
-		#		stop(svc);
-		#		touch(svc);
-		#		}
-		#	else {
-		#		start(n1);
-		#		touch("no-" n1);
-		#		}
-		#	}' "$SCRIPT" $LIST wlan.off wlan.client wlan.ap &
+			}' "$SCRIPT" $LIST wlan.off wlan.client wlan.ap &
 
 	# The while-wait-loop allows to handle signals.
 	while [ "$(list_processes - inotifywait)" != "" ]; do
@@ -1756,7 +1781,7 @@ wlan_status() {
 	    fi
 	else
 	    ST=off
-	    [ "$1" = "--stop" ]  &&  { rfkill unblock wlan; sleep 2; }
+	    [ "$1" = "--stop" ]  &&  { sudo rfkill unblock wlan; sleep 2; }
 	fi
 
 	# Print status or operations.
@@ -1782,7 +1807,7 @@ wlan() {
 
 	    off)
 		wlan_status --stop
-		rfkill block wlan
+		sudo rfkill block wlan
 		;;
 
 	    client)
@@ -2309,15 +2334,7 @@ if [ "$1" != ""  -a  "$1" != "--start" ]; then
 
     # If the command is "start" or "stop" then make that the
     # operation and get the service name from the command line.
-# Löschen?
-#    if [ "$cmd" = "start"  -o  "$cmd" = "stop" ]; then
-#	echo "## start/stop Code"
-#	op="$cmd"
-#	cmd="$1";  shift  ||  exit 1
-#    fi
 
-
-#echo ">> $NAME $cmd $*" >&2
     case "$cmd" in
 
     # This starts, stops and updates the status of simple
@@ -2534,6 +2551,7 @@ fi
 # Load g_ether if OTG_DEV_ADDR is set, dwc2 is active, g_ether
 # is not already loaded and only the Linux USB hub is present.
 
+
 if [ "$OTG_DEV_ADDR" != "" ]  &&
     grep -q '^ *dtoverlay *= *dwc2' /boot/config.txt  &&
     ! lsmod | grep -qE '(g_ether|g_multi)'  &&
@@ -2544,9 +2562,20 @@ if [ "$OTG_DEV_ADDR" != "" ]  &&
 fi
 
 
+if lsmod | grep -qE '(g_multi)'  &&
+    ! systemctl -q is-active serial-getty@ttyGS0; then
+	echo starting serial interface
+	sudo systemctl start serial-getty@ttyGS0
+fi
+
+
+# In Raspbian Bookworm the USB network must be started from
+# NetworkManager (or somehow else).
+configure_usb_network
+
 
 #
-# When we are about to start the file server check if we are
+# When we are about to start the file server, check if we are
 # connected OTG - if usb0 is configured or not.  If not we exit.
 #
 
@@ -2588,7 +2617,7 @@ fi
 
 
 # Some more initialization.
-rfkill unblock wlan
+sudo rfkill unblock wlan
 
 if [ "$AP_AUTOSTART" = "yes" ]; then
     autostart_ap &
