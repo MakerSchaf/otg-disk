@@ -1,4 +1,9 @@
 
+2023-12-06
+
+ - Replace *g_ether* with *libcomposite*. 
+
+
 2023-11-28
 
  - Fixed support for USB networking under Bookworm.  The right way

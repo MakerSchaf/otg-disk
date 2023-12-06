@@ -43,7 +43,7 @@ fi
 
 # -- config starts -- Don't change this line.
 
-# MAC address in case g_ether is loaded here.
+# MAC address in case libcomposite is loaded here.
 OTG_DEV_ADDR="aa:bb:cc:dd:ee:f1"
 
 # Use this fixed IP address instead of nmcli zeroconf or other.
@@ -1314,6 +1314,52 @@ kill_processes() {
 
 
 # -------------------------------------------------------------------
+# libcomposite based gadget.
+
+activate_gadget() {
+	# See https://www.isticktoit.net/?p=1383
+
+	GADGET=/sys/kernel/config/usb_gadget
+	NAME=otg-disk
+
+	sudo sh <<-EOF
+	cd "$GADGET"
+
+	mkdir -p "$NAME"
+	cd "$NAME"
+
+	echo 0x1d6b > idVendor # Linux Foundation
+	echo 0x0104 > idProduct # Multifunction Composite Gadget
+	echo 0x0100 > bcdDevice # v1.0.0
+	echo 0x0200 > bcdUSB # USB2
+
+	mkdir -p strings/0x409
+	echo "4K89-2377-1193" > strings/0x409/serialnumber
+	echo "No such manufacturer" > strings/0x409/manufacturer
+	echo "$NAME USB Device" > strings/0x409/product
+
+	mkdir -p configs/c.1/strings/0x409
+	echo "Config 1: ECM network" > configs/c.1/strings/0x409/configuration
+	echo 250 > configs/c.1/MaxPower
+
+	# Add functions here
+
+	# Serial interface
+	mkdir -p functions/acm.usb0
+	ln -s functions/acm.usb0 configs/c.1/
+
+	# Network interface
+	mkdir -p functions/ecm.usb0
+	echo "$1" >functions/ecm.usb0/dev_addr
+	ln -s functions/ecm.usb0 configs/c.1/
+
+	# End functions
+	ls /sys/class/udc > UDC
+	EOF
+    }
+
+
+# -------------------------------------------------------------------
 # USB network for Bookworm.
 
 configure_usb_network() {
@@ -2351,6 +2397,7 @@ if [ "$1" != ""  -a  "$1" != "--start" ]; then
 	# Stop otg-disk?
 	if [ "$OBJ" = "otg-disk" -a "$OP" = "stop" ]; then
 	    kill_processes inotifywait
+	    exit
 	fi
 
 	if [ "$OBJ" != "${OBJ#usb.}" ]; then
@@ -2548,21 +2595,22 @@ fi
 
 
 # -------------------------------------------------------------------
-# Load g_ether if OTG_DEV_ADDR is set, dwc2 is active, g_ether
+# Load libcomposite if OTG_DEV_ADDR is set, dwc2 is active, g_ether
 # is not already loaded and only the Linux USB hub is present.
 
 
 if [ "$OTG_DEV_ADDR" != "" ]  &&
     grep -q '^ *dtoverlay *= *dwc2' /boot/config.txt  &&
-    ! lsmod | grep -qE '(g_ether|g_multi)'  &&
+    ! lsmod | grep -qE '(g_ether|g_multi|libcomposite)'  &&
     [ "$(lsusb | wc -l)" = "1" ]; then
-	echo loading g_ether
-	sudo modprobe g_ether dev_addr="$OTG_DEV_ADDR"
+	echo loading libcomposite
+	sudo modprobe libcomposite
+	activate_gadget "$OTG_DEV_ADDR"
 	NO_OTG_CHECK="y"
 fi
 
 
-if lsmod | grep -qE '(g_multi)'  &&
+if test -c /dev/ttyGS0  &&
     ! systemctl -q is-active serial-getty@ttyGS0; then
 	echo starting serial interface
 	sudo systemctl start serial-getty@ttyGS0
@@ -2609,7 +2657,7 @@ fi
 # Start the USB-disk monitor if g_ether is not loaded or
 # more than one USB device is found.
 
-if ! lsmod | grep -qE '(g_ether|g_multi)'  ||
+if ! lsmod | grep -qE '(g_ether|g_multi|libcomposite)'  ||
     [ "$(lsusb | wc -l)" != "1" ]; then
 	echo starting USB monitor
 	usb_monitor "$THIS" &
