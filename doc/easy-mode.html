@@ -1,0 +1,804 @@
+<HTML>
+<HEAD>
+  <!-- software: muc 1.1.2 -->
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <TITLE>File server operation</TITLE>
+  <LINK HREF="index.html" REL="home">
+<STYLE TYPE="text/css">
+    A, A:visited { text-decoration: none; color: blue; }
+    A:hover { color: #00FF00; }
+    BODY { padding: 1em; margin: auto; max-width: 700; }
+    BODY, TD, TH { font-size: 11pt; line-height: 1.5;
+        font-family: Verdana, Georgia, Helvetica, Arial, sans-serif;
+        }
+    PRE.code { margin-left: 2em; padding: .5em; background: #F0F0F0; color: #0000FF;
+	 line-height: 1.2;
+        font-size: 90%; overflow-x: auto; overflow-y: auto;
+        font-family: "courier new", monospace;
+        border: 1px solid black; border-radius: 0px; border: 1px solid grey;
+        }
+    CODE { font-family: "courier new", monospace; color: #0000FF;
+        font-size: 90%; padding: .2em .4em;
+        background: #F0F0F0; border-radius: 6px;
+        vertical-align: middle;
+        }
+    TABLE { margin-left: 2em; border-spacing: 0px; }
+    TD, TH { border: 1px dotted gray; padding-left: .5em; padding-right: .5em; }
+    BLOCKQUOTE { margin-left: 2em; border-left: 2px solid blue; padding-left: 1em; }
+    DIV.navigator { padding: 2px; font-size: 80%; background: #F0FFF0; border-bottom: 1px solid blue; }
+    DIV.lastmod { font-size: 80%; }
+    DIV.introduction { font-size: 90%; margin: 0 2em 0 2em; }
+</STYLE>
+<LINK HREF="styles.css" REL="stylesheet" TYPE="text/css">
+<STYLE TYPE="text/css">
+DIV.navigator { background: #F0FFF0; }
+</STYLE>
+<SCRIPT SRC="keyboard.js" TYPE="text/javascript"></SCRIPT>
+</HEAD>
+<BODY>
+<NAV><DIV ALIGN="RIGHT" CLASS="navigator"><A HREF="index.html" REL="Home">Home</A>
+| <A HREF="contents.html" REL="Contents">Contents</A>
+| <A HREF="safety-instructions.html" REL="first">F</A><A HREF="installation.html" REL="prev">P</A><A HREF="http-interface.html" REL="next">N</A><A HREF="reference.html" REL="last">L</A></DIV></NAV>
+<DIV ALIGN="RIGHT" CLASS="lastmod">Last modified: 2023-12-06 08:30</DIV>
+<P><EM>otg-disk</EM> provides some functionality which needs to be configured,
+activated and deactivated by changing configuration parameters.  No
+scripting or system configuration is needed.  I call this the <EM>easy
+mode</EM> where a user does not need to dive deep into the system and
+its configuration.  Easy mode delivers</P>
+<UL>
+<LI>simple public and/or private <EM>samba</EM>/cifs file shares,</LI>
+<LI>streaming content by DLNA,</LI>
+<LI>serving content by HTTP, and</LI>
+<LI>running also an optional W-Lan hotspot.</LI>
+</UL>
+<P>which turns the Raspberry into an on-demand "networked USB drive".</P>
+<H3><P>File server operation</P></H3>
+<P>With this installation and <EM>otg-disk</EM>'s default configuration you can</P>
+<UL>
+<LI>run an unprotected file server to allow easy file sharing between
+ computers,</LI>
+<LI>shutdown (or reboot) the Raspberry by deleting files on the <EM>samba</EM>
+ share (no <EM>ssh</EM> or similar required).</LI>
+</UL>
+<P>Simply run</P>
+<PRE CLASS="code">$ ./otg-disk --start
+runnnig otg-disk, press CTRL+C to terminate.
+Starting smbd ...
+Starting sys-monitor ...
+Setting up watches.  Beware: since -r was given, this may take a while!
+Watches established.</PRE>
+<P>If your output looks different then something is wrong.</P>
+<P>Now open a file explorer and connect to <EM>otg-disk</EM>'s file server.
+For Linux the address should be <CODE>smb://<EM>name-of-your-raspberry</EM>/</CODE>
+and <CODE>//<EM>name-of-your-raspberry</EM>/</CODE> for Windows.  You may also find
+the Raspberry in the network neighborhood.  However you connect, you
+should see the <CODE>pub</CODE> share.  Open it and connect anonymously when
+asked for login information.  No password is needed.</P>
+<P>The share contains the files from your <EM>tmp</EM> directory (full path:
+<EM>~/tmp</EM> or $HOME<EM>/tmp</EM>).  If you don't have that directory is is
+created by <EM>otg-disk</EM>.  You can copy files to or from there, create
+and delete directories and files as you like.  The file server
+behaves like a simple "networked USB drive", granting access to
+everything.</P>
+<H3><P>Device operation</P></H3>
+<P>The file share contains also a directory named <EM>sys</EM>.  This is
+special and creates <EM>otg-disk</EM>'s second core function: system
+operation by file manipulation.  The directory is pre-populated with
+files like <EM>shutdown</EM> or <EM>vnc.start</EM>.  Deleting one of the files
+triggers the corresponding action, i.e. deleting <EM>shutdown</EM> shuts
+the Raspberry down and deleting <EM>vnc.start</EM> starts a VNC server.
+You will also get the file <EM>vnc.stop</EM> in exchange.</P>
+<P>Assuming you would install <EM>otg-disk</EM> as system service you could</P>
+<UL>
+<LI>power on then device on demand,</LI>
+<LI>exchange files as you need,</LI>
+<LI>and power it off again</LI>
+</UL>
+<P>by only accessing the file server.  None of the usual remote access
+tools like <EM>ssh</EM> or <EM>vnc</EM> would be required.</P>
+<H3><P>File server configuration</P></H3>
+<P>All of <EM>otg-disk</EM>'s configuration is inside the script.  To modify
+it you have to open the script in a text editor.  Look for the line
+<CODE># Configuration.</CODE>.  The parameters are set below and so far the
+following settings were used.</P>
+<PRE CLASS="code"># Name and path of public samba share.
+PUBLIC_SHARE_NAME="pub"
+PUBLIC_SHARE_PATH="/home/$USER/tmp"
+PUBLIC_SHARE_OPT="read only = no"
+...
+# This is the location of the control directory.
+SYSCTRL="$PUBLIC_SHARE_PATH/sys"</PRE>
+<P>The lines are not consecutive (indicated be the three dots <CODE>...</CODE>).
+As you might have guessed, these assignments configure</P>
+<UL>
+<LI>the public share's name: <CODE>PUBLIC_SHARE_NAME="pub"</CODE>,</LI>
+<LI>its directory: <CODE>PUBLIC_SHARE_PATH="/home/$USER/tmp"</CODE>,</LI>
+<LI>and makes it writeable (which is also the default):
+ <CODE>PUBLIC_SHARE_OPT="read only = no"</CODE>.</LI>
+</UL>
+<P>The <CODE>SYSCTRL</CODE> directory contains the files to control the Raspberry
+and must be accessible inside the file server.</P>
+<P>Now having everything public may not be what you want and there are
+options to configure a password protected share to be accessible by
+only you:</P>
+<PRE CLASS="code"># Configuration of password protected share.
+PRIVATE_SHARE_NAME=""
+PRIVATE_SHARE_PATH="$HOME"
+PRIVATE_SHARE_USERNAME="$USER"
+PRIVATE_SHARE_PASSWORD="PutYourPasswordHere"
+PRIVATE_SHARE_OPT=""</PRE>
+<P>The variables work as for the public share but you have to specify
+a password.  The private share is configured by <EM>otg-disk</EM> if its
+name and path is set.</P>
+<P>There is also the <CODE>OTHER_SHARES</CODE> option which allows you to
+configure even more shares but this is beyond this introduction.
+See the <A HREF="reference.html" TITLE="otg-disk reference">reference document</A> for more information about it.</P>
+<P>Restart <EM>otg-disk</EM> to activate any modification.</P>
+<H3><P>Running a DLNA server</P></H3>
+<P>There are a lot of Raspberry on-the-go projects and one is this: A
+Pi Zero emulates a USB-disk to a smart TV and gets file updates by
+its wireless network see <A HREF="https://magpi.raspberrypi.com/articles/pi-zero-w-smart-usb-flash-drive" TARGET="_blank" TITLE=" &quot;Make a Pi Zero W Smart USB flash drive&quot;">Make a Pi Zero W Smart USB flash
+drive</A>.  Today's smart TV come usually with DLNA software and
+<EM>otg-disk</EM> comes with builtin support for that.  So we can use DLNA
+instead, if we install and configure it.</P>
+<P>Run <CODE>./otg-disk --apt-check minidlna</CODE> to see if the server is
+already installed or not and run</P>
+<PRE CLASS="code">$ sudo ./otg-disk --apt-get minidlna - minidlna</PRE>
+<P>if not.  This installs and disables the service.</P>
+<P>The configuration is again done in the script file.</P>
+<PRE CLASS="code"># The SYS directory gives control to these services.
+SERVICE_LIST="vnc httpd minidlna"</PRE>
+<PRE CLASS="code"># Start these services with otg-disk.
+START_SERVICES="minidlna"</PRE>
+<PRE CLASS="code"># Set this path to start minidlna.
+MEDIA_PATH="$PUBLIC_SHARE_PATH"
+...
+# Systems services to check for stopping / restarting.
+SYSTEM_SERVICES="minidlnad"</PRE>
+<P>The options above tell <EM>otg-disk</EM></P>
+<UL>
+<LI>to provide service control files for the DLNA server:
+ <CODE>SERVICE_LIST="vnc httpd minidlna"</CODE> (and for <EM>vnc</EM> and <EM>httpd</EM>
+ too),</LI>
+<LI>to start the DLNA service automatically:
+ <CODE>START_SERVICES="minidlna"</CODE>,</LI>
+<LI>that the media files (music, pictures, videos) are in the
+ public file share: <CODE>MEDIA_PATH="$PUBLIC_SHARE_PATH"</CODE>,</LI>
+<LI>and that <EM>otg-disk</EM> should check for an already running service
+ instance and stop it on startup (just it case <EM>minidlnad</EM> is one
+ of your normal system services): <CODE>SYSTEM_SERVICES="minidlnad"</CODE>.</LI>
+</UL>
+<P>From the options above, <CODE>MEDIA_PATH</CODE> must be set.  Otherwise
+<EM>minidlnad</EM> is not started.  It the directory doesn't exist it is
+created.  The service will also not run, if <EM>otg-disk</EM> detects that
+an instance of it is already running.</P>
+<P>With the configuration above the Raspberry can now also share media
+files to smart TVs, get updated or additional media files by W-Lan
+(or cable network) and serve multiple clients at the same time,
+which is somewhat more (a considerable upgrade) than the OTG project
+mentioned above.</P>
+<H3><P>Access point configuration</P></H3>
+<P>Another interesting thing is that <EM>otg-disk</EM> can start a W-Lan
+hotspot allowing clients to connect without an additional W-Lan
+access point.  (Think of your next LAN party or workgroup meeting
+but make sure you operate the Raspberry in a trusted environment and
+network.)</P>
+<P>First, we may need to install two more packages:</P>
+<PRE CLASS="code">$ ./otg-disk --apt-check hostapd dnsmasq</PRE>
+<P>and install missing packages with e.g.</P>
+<PRE CLASS="code">$ sudo ./otg-disk --apt-get hostapd dnsmasq - hostapd dnsmasq</PRE>
+<P>assuming that you need to get both.  There are two parts to
+configure: first the wireless network and then its IP configuration.</P>
+<PRE CLASS="code"># Hotspot configuration.
+WLAN_COUNTRY_CODE="XX"
+WLAN_SSID="$(hostname)-ap"
+WLAN_PASSWD="AnotherSecretPassword"</PRE>
+<P>Make sure to set the correct country code for your location (e.g.
+<CODE>DE</CODE> for Germany, see <EM>/etc/wpa_supplicant/wpa_supplicant.conf</EM>)
+otherwise your hotspot may be illegal (and not properly working).
+Set SSID and password as you like.</P>
+<P>The default IP-configuration is this:</P>
+<PRE CLASS="code"># Access point network.
+AP_IFC="wlan0"
+AP_IP_ADDR="192.168.1.1"
+AP_NETMASK="255.255.255.0"
+AP_DHCP_DEF="192.168.1.11,192.168.1.55,255.255.255.0,24h"</PRE>
+<P>These four parameters configure the hotspot network (192.168.1.1/24)
+and <EM>dnsmasq</EM>'s DHCP server (DHCP range is from 192.168.1.11 to
+192.168.1.55). <CODE>AP_IFC</CODE> needs to be changed if you have multiple
+W-Lan adapters and the hotspot shall not run on wlan0.</P>
+<P>Of course, when you boot the Raspberry outside your home network you
+cannot connect to it (by wireless) to start the hotspot and there are
+two work-arounds:</P>
+<OL>
+<LI>Connect you laptop on USB on-the-go network to start the
+ hotspot, or</LI>
+<LI>tell <EM>otg-disk</EM> to automatically start the hotspot if it doesn't
+ find a working network connection.</LI>
+</OL>
+<P>Option 2 is configured inside the script below the IP configuration.</P>
+<PRE CLASS="code"># The script can check on startup if any network is available
+# and start the configured access point if not.
+AP_AUTOSTART=yes</PRE>
+<PRE CLASS="code"># Wait that much seconds before testing for networks.
+AP_AUTOSTART_DELAY=30</PRE>
+<PRE CLASS="code"># If the access point is started, the busybox http server
+# can be started too.
+AP_AUTOSTART_HTTP=no</PRE>
+<P>If <CODE>AP_AUTOSTART=yes</CODE> is set <EM>otg-disk</EM> waits <CODE>$AP_AUTOSTART_DELAY</CODE>
+seconds (here: 30 seconds) after startup to allow working network
+connections to come up.  If it doesn't find any (wireless, cable
+or on-the-go ethernet) it starts the configured access point.  It
+can also start the builtin HTTP server assuming that it is on an
+outdoor location and controlled from a mobile (no laptop with
+file explorer around) but this is beyond this document but we will
+come back to that later.</P>
+<H3><P>HTTP server</P></H3>
+<P><EM>otg-disk</EM> comes with support for a simple HTTP server.  It uses the
+<EM>busybox</EM> http module, which means that no further software needs to
+be installed.  There are only two configuration options:</P>
+<PRE CLASS="code"># Parameters for busybox httpd.
+HTTP_PORT=2080
+HTTP_DOCUMENT_ROOT="$PUBLIC_SHARE_PATH"</PRE>
+<P>The HTTP server's service port is 2080 (<EM>otg-disk</EM> does not support
+running the server on an unprivileged port &lt; 1024) and the webspace
+is (in the default configuration) equal to your public file share.</P>
+<P>So far, the HTTP server is only of limited use.  It allows a client
+without a <EM>samba</EM> (or cifs) client (e.g. a mobile phone) to access
+files on the Raspberry.  But HTTP and CGI scripting adds a whole new
+world of possible application, which are beyond this document.</P>
+<H3><P>On-the-go network configuration</P></H3>
+<P>I started with <EM>otg-disk</EM> to easily connect to Pi Zeros that don't
+have the wireless chip.  On-the-go network is the only working thing
+here.  It's also useful when the Raspberry has a W-LAN chips but
+your host can (or should) not connect to it.  In that case USB gives
+you a working network connection.  It does however require a change
+of your Gadget's system configuration: you have to activate the <EM>dwc2</EM>
+overlay at boot time.</P>
+<P>Before you do this, you should know that loading <EM>dwc2</EM> impacts USB
+handling.</P>
+<UL>
+<LI>With <EM>dwc2</EM> loaded, connecting devices to the Raspi's own USB
+ controller stops working.</LI>
+<LI>If you connect USB devices via another USB hub it may work or
+ not.</LI>
+<LI>If <EM>dwc2</EM> is loaded and USB networking (by loading <EM>g_ether</EM> or
+ <EM>libcomposite</EM>) is activated, all local USB devices stop working
+ and are in fact connected to the computer hosting the Raspberry.</LI>
+</UL>
+<P>To enable on-the-go network add the line <CODE>dtoverlay=dwc2</CODE> in an
+<CODE>[all]</CODE> section</P>
+<PRE CLASS="code">[all]
+dtoverlay=dwc2</PRE>
+<P>in the file <EM>/boot/config.txt</EM> (if <EM>dwc2</EM> isn't already there) and
+reboot the Raspberry.  You can also download the script
+<A HREF="switch-dwc2" TARGET="_blank" TITLE="switch-dc2"><EM>switch-dwc2</EM></A>, which lets you enable and disable the overlay
+from the command line.</P>
+<P>In addition to the <EM>dwc2</EM> overlay the kernel module <EM>libcomposite</EM>
+must be loaded to activate the network.  <EM>otg-disk</EM> will do this if</P>
+<OL>
+<LI>the USB network adapter's MAC address is set with the
+ <CODE>OTG_DEV_ADDR</CODE> option,</LI>
+<LI>the <EM>dwc2</EM> overlay is activated,</LI>
+<LI>neither <EM>g_ether</EM> nor <EM>g_multi</EM> are already loaded, and</LI>
+<LI>only one device (the Raspberry's own USB hub) is found on the
+ USB.</LI>
+</OL>
+<P>These conditions shall ensure that OTG does not interfere with a
+connected USB device, which you want to access.  Additionally the
+required configuration option</P>
+<PRE CLASS="code"># MAC address in case g_ether is loaded here.
+OTG_DEV_ADDR="aa:bb:cc:dd:ee:f1"</PRE>
+<P>makes the Raspi always pick the same IP address, which makes life
+somewhat easier.</P>
+<P>For Raspbian Bookwork the method of network configuration changed to
+<EM>NetworkManager</EM>.  Using that takes comparable long (and comes in
+addition to the "slow" boot time) to go through DHCP and local-link
+(aka zeroconf).  Therefore it is recommended to configure a fixexd
+IP-number, which is used when set:</P>
+<PRE CLASS="code"># Use this fixed IP address instead of nmcli zeroconf or other.
+OTG_IP_ADDR="169.254.233.90"</PRE>
+<P>No network mask is expected or supported (which is 255.255.0.0 for
+zeroconf).  If the network does not come up check the network settings
+of your host.  You might have to activate zeroconf/locallink here too.</P>
+<P>The network still fails you can access the Raspberry on the USB's
+serial interface.  If your host is Linux the command would be</P>
+<PRE CLASS="code">minicom -D /dev/ttyACM0</PRE>
+<P>Notice also that you need special OTG cables or adapters to connect
+the Raspi to a capable host.  Not all cables will work.  Usually a
+smartphone cable that can be used to exchange data with a computer
+should do.</P>
+<H3 ID="systemd-service"><P>Running otg-disk</P></H3>
+<P>When you have followed the introduction you have started <EM>otg-disk</EM>
+already several times from the command line.</P>
+<PRE CLASS="code">$ ./otg-disk --start</PRE>
+<P>This is ideal for ad-hoc services or when you want to debug things
+because log messages go to the console when the script is started
+from a terminal.  Pressing <CODE>Ctrl+C</CODE> stops the script.</P>
+<P>You may want to run <EM>otg-disk</EM> as a system service and this is easy
+to do.  However you should check if (and where) the script writes
+its logfiles:</P>
+<PRE CLASS="code"># Logs are stored here.
+LOGDIR="$PUBLIC_SHARE_PATH/logs"</PRE>
+<P>If <CODE>LOGDIR</CODE> is set <EM>otg-disk</EM>'s log messages are written to this
+directory, one file per invocation.  Logfiles accumulate in the
+directory and you should remove old files from time to time.  If you
+unset the <CODE>LOGDIR</CODE> option log messages go to the system's log file
+(usually <EM>/var/log/messages</EM>).</P>
+<P>To install <EM>otg-disk</EM> as a system service you need to run only</P>
+<PRE CLASS="code">$ sudo ./otg-disk --install</PRE>
+<P>This creates a <EM>systemd</EM> unit file in <EM>/etc/systemd/system</EM> and
+registers it but the service is not immediately started.  Run</P>
+<PRE CLASS="code">$ sudo systemctl start otg-disk.service</PRE>
+<P>for that (or reboot).</P>
+<P>After that</P>
+<UL>
+<LI><EM>otg-disk</EM> will be started on every boot,</LI>
+<LI>starting the file server and all other services, which are
+ configured to automatically start (<CODE>START_SERVICES</CODE> option).</LI>
+</UL>
+<P>If you want to debug the / edit the script stop the system service
+first and run <EM>otg-disk</EM> manually:</P>
+<PRE CLASS="code">$ sudo systemctl stop otg-disk.service
+$ ./otg-disk --start</PRE>
+<P>Uninstalling the <EM>otg-disk</EM> as simple as installing:</P>
+<PRE CLASS="code">$ sudo ./otg-disk --uninstall</PRE>
+<P>stops the service, removes the unit files and reloads <EM>systemd</EM>'s
+configuration.</P>
+<P>There's also an alternative installation option.  If you use</P>
+<PRE CLASS="code">$ sudo ./otg-disk --install-otg</PRE>
+<P>(instead of the <CODE>--install</CODE> from above) then the script checks first
+if <EM>usb0</EM> is up and continues to start only if that's the case.</P>
+<H3 ID="systemd-service"><P>Accessing the server</P></H3>
+<P>The configuration enables two server components on the Raspberry: a
+<EM>samba</EM> and (if activated) a DLNA server.  (The HTTP server needs
+some more work, which is done in <A HREF="http-interface.html" TITLE="HTTP Interface">the next document</A>).  The <EM>samba</EM>
+server provides a simple way to exchange files between clients.  Today's
+popular operating systems (iOS, Linux, Windows, UNIX) have built-in
+support for the protocol.  Even some mobile phones have it
+out-of-the-box and smb/cifs compatible software is available in the app
+stores.</P>
+<P>The DLNA server streams media files to clients.  Again, support
+comes with the major operating system and mobiles phones but smart TVs
+are possible options.  Finally, there's the local W-Lan hotspot.  It
+allows some flexibility with the "where" because it enables the
+Raspberry to create its network infrastructure for the running services.</P>
+</BODY>
+<!-- source: text/markdown
+
+_otg-disk_ provides some functionality which needs to be configured,
+activated and deactivated by changing configuration parameters.  No
+scripting or system configuration is needed.  I call this the _easy
+mode_ where a user does not need to dive deep into the system and
+its configuration.  Easy mode delivers
+
+ - simple public and/or private _samba_/cifs file shares,
+ - streaming content by DLNA,
+ - serving content by HTTP, and
+ - running also an optional W-Lan hotspot.
+
+which turns the Raspberry into an on-demand "networked USB drive".
+
+
+
+### File server operation
+
+With this installation and _otg-disk_'s default configuration you can
+
+ - run an unprotected file server to allow easy file sharing between
+   computers,
+ - shutdown (or reboot) the Raspberry by deleting files on the _samba_
+   share (no _ssh_ or similar required).
+
+Simply run
+
+    $ ./otg-disk --start
+    runnnig otg-disk, press CTRL+C to terminate.
+    Starting smbd ...
+    Starting sys-monitor ...
+    Setting up watches.  Beware: since -r was given, this may take a while!
+    Watches established.
+
+If your output looks different then something is wrong.
+
+Now open a file explorer and connect to _otg-disk_'s file server.
+For Linux the address should be ``smb://_name-of-your-raspberry_/``
+and ``//_name-of-your-raspberry_/`` for Windows.  You may also find
+the Raspberry in the network neighborhood.  However you connect, you
+should see the `pub` share.  Open it and connect anonymously when
+asked for login information.  No password is needed.
+
+The share contains the files from your _tmp_ directory (full path:
+_~/tmp_ or $HOME_/tmp_).  If you don't have that directory is is
+created by _otg-disk_.  You can copy files to or from there, create
+and delete directories and files as you like.  The file server
+behaves like a simple "networked USB drive", granting access to
+everything.
+
+
+### Device operation
+
+The file share contains also a directory named _sys_.  This is
+special and creates _otg-disk_'s second core function: system
+operation by file manipulation.  The directory is pre-populated with
+files like _shutdown_ or _vnc.start_.  Deleting one of the files
+triggers the corresponding action, i.e. deleting _shutdown_ shuts
+the Raspberry down and deleting _vnc.start_ starts a VNC server.
+You will also get the file _vnc.stop_ in exchange.
+
+Assuming you would install _otg-disk_ as system service you could
+
+ - power on then device on demand,
+ - exchange files as you need,
+ - and power it off again
+
+by only accessing the file server.  None of the usual remote access
+tools like _ssh_ or _vnc_ would be required.
+
+
+### File server configuration
+
+All of _otg-disk_'s configuration is inside the script.  To modify
+it you have to open the script in a text editor.  Look for the line
+`# Configuration.`.  The parameters are set below and so far the
+following settings were used.
+
+    # Name and path of public samba share.
+    PUBLIC_SHARE_NAME="pub"
+    PUBLIC_SHARE_PATH="/home/$USER/tmp"
+    PUBLIC_SHARE_OPT="read only = no"
+    ...
+    # This is the location of the control directory.
+    SYSCTRL="$PUBLIC_SHARE_PATH/sys"
+
+The lines are not consecutive (indicated be the three dots `...`).
+As you might have guessed, these assignments configure
+
+ - the public share's name: `PUBLIC_SHARE_NAME="pub"`,
+ - its directory: `PUBLIC_SHARE_PATH="/home/$USER/tmp"`,
+ - and makes it writeable (which is also the default):
+   `PUBLIC_SHARE_OPT="read only = no"`.
+
+The `SYSCTRL` directory contains the files to control the Raspberry
+and must be accessible inside the file server.
+
+Now having everything public may not be what you want and there are
+options to configure a password protected share to be accessible by
+only you:
+
+    # Configuration of password protected share.
+    PRIVATE_SHARE_NAME=""
+    PRIVATE_SHARE_PATH="$HOME"
+    PRIVATE_SHARE_USERNAME="$USER"
+    PRIVATE_SHARE_PASSWORD="PutYourPasswordHere"
+    PRIVATE_SHARE_OPT=""
+
+The variables work as for the public share but you have to specify
+a password.  The private share is configured by _otg-disk_ if its
+name and path is set.
+
+There is also the `OTHER_SHARES` option which allows you to
+configure even more shares but this is beyond this introduction.
+See the [reference document][1] for more information about it.
+
+Restart _otg-disk_ to activate any modification.
+
+
+### Running a DLNA server
+
+There are a lot of Raspberry on-the-go projects and one is this: A
+Pi Zero emulates a USB-disk to a smart TV and gets file updates by
+its wireless network see [Make a Pi Zero W Smart USB flash
+drive][2].  Today's smart TV come usually with DLNA software and
+_otg-disk_ comes with builtin support for that.  So we can use DLNA
+instead, if we install and configure it.
+
+Run `./otg-disk --apt-check minidlna` to see if the server is
+already installed or not and run
+
+    $ sudo ./otg-disk --apt-get minidlna - minidlna
+
+if not.  This installs and disables the service.
+
+The configuration is again done in the script file.
+
+    # The SYS directory gives control to these services.
+    SERVICE_LIST="vnc httpd minidlna"
+    
+    # Start these services with otg-disk.
+    START_SERVICES="minidlna"
+
+    # Set this path to start minidlna.
+    MEDIA_PATH="$PUBLIC_SHARE_PATH"
+    ...
+    # Systems services to check for stopping / restarting.
+    SYSTEM_SERVICES="minidlnad"
+
+The options above tell _otg-disk_
+
+ - to provide service control files for the DLNA server:
+   `SERVICE_LIST="vnc httpd minidlna"` (and for _vnc_ and _httpd_
+   too),
+ - to start the DLNA service automatically:
+   `START_SERVICES="minidlna"`,
+ - that the media files (music, pictures, videos) are in the
+   public file share: `MEDIA_PATH="$PUBLIC_SHARE_PATH"`,
+ - and that _otg-disk_ should check for an already running service
+   instance and stop it on startup (just it case _minidlnad_ is one
+   of your normal system services): `SYSTEM_SERVICES="minidlnad"`.
+
+From the options above, `MEDIA_PATH` must be set.  Otherwise
+_minidlnad_ is not started.  It the directory doesn't exist it is
+created.  The service will also not run, if _otg-disk_ detects that
+an instance of it is already running.
+
+With the configuration above the Raspberry can now also share media
+files to smart TVs, get updated or additional media files by W-Lan
+(or cable network) and serve multiple clients at the same time,
+which is somewhat more (a considerable upgrade) than the OTG project
+mentioned above.
+
+
+### Access point configuration
+
+Another interesting thing is that _otg-disk_ can start a W-Lan
+hotspot allowing clients to connect without an additional W-Lan
+access point.  (Think of your next LAN party or workgroup meeting
+but make sure you operate the Raspberry in a trusted environment and
+network.)
+
+First, we may need to install two more packages:
+
+    $ ./otg-disk --apt-check hostapd dnsmasq
+
+and install missing packages with e.g.
+
+    $ sudo ./otg-disk --apt-get hostapd dnsmasq - hostapd dnsmasq
+
+assuming that you need to get both.  There are two parts to
+configure: first the wireless network and then its IP configuration.
+
+    # Hotspot configuration.
+    WLAN_COUNTRY_CODE="XX"
+    WLAN_SSID="$(hostname)-ap"
+    WLAN_PASSWD="AnotherSecretPassword"
+
+Make sure to set the correct country code for your location (e.g.
+`DE` for Germany, see _/etc/wpa_supplicant/wpa_supplicant.conf_)
+otherwise your hotspot may be illegal (and not properly working).
+Set SSID and password as you like.
+
+The default IP-configuration is this:
+
+    # Access point network.
+    AP_IFC="wlan0"
+    AP_IP_ADDR="192.168.1.1"
+    AP_NETMASK="255.255.255.0"
+    AP_DHCP_DEF="192.168.1.11,192.168.1.55,255.255.255.0,24h"
+
+These four parameters configure the hotspot network (192.168.1.1/24)
+and _dnsmasq_'s DHCP server (DHCP range is from 192.168.1.11 to
+192.168.1.55). `AP_IFC` needs to be changed if you have multiple
+W-Lan adapters and the hotspot shall not run on wlan0.
+
+Of course, when you boot the Raspberry outside your home network you
+cannot connect to it (by wireless) to start the hotspot and there are
+two work-arounds:
+
+ 1. Connect you laptop on USB on-the-go network to start the
+    hotspot, or
+ 2. tell _otg-disk_ to automatically start the hotspot if it doesn't
+    find a working network connection.
+
+Option 2 is configured inside the script below the IP configuration.
+
+    # The script can check on startup if any network is available
+    # and start the configured access point if not.
+    AP_AUTOSTART=yes
+    
+    # Wait that much seconds before testing for networks.
+    AP_AUTOSTART_DELAY=30
+    
+    # If the access point is started, the busybox http server
+    # can be started too.
+    AP_AUTOSTART_HTTP=no
+
+If `AP_AUTOSTART=yes` is set _otg-disk_ waits `$AP_AUTOSTART_DELAY`
+seconds (here: 30 seconds) after startup to allow working network
+connections to come up.  If it doesn't find any (wireless, cable
+or on-the-go ethernet) it starts the configured access point.  It
+can also start the builtin HTTP server assuming that it is on an
+outdoor location and controlled from a mobile (no laptop with
+file explorer around) but this is beyond this document but we will
+come back to that later.
+
+
+### HTTP server
+
+_otg-disk_ comes with support for a simple HTTP server.  It uses the
+_busybox_ http module, which means that no further software needs to
+be installed.  There are only two configuration options:
+
+    # Parameters for busybox httpd.
+    HTTP_PORT=2080
+    HTTP_DOCUMENT_ROOT="$PUBLIC_SHARE_PATH"
+
+The HTTP server's service port is 2080 (_otg-disk_ does not support
+running the server on an unprivileged port < 1024) and the webspace
+is (in the default configuration) equal to your public file share.
+
+So far, the HTTP server is only of limited use.  It allows a client
+without a _samba_ (or cifs) client (e.g. a mobile phone) to access
+files on the Raspberry.  But HTTP and CGI scripting adds a whole new
+world of possible application, which are beyond this document.
+
+
+### On-the-go network configuration
+
+I started with _otg-disk_ to easily connect to Pi Zeros that don't
+have the wireless chip.  On-the-go network is the only working thing
+here.  It's also useful when the Raspberry has a W-LAN chips but
+your host can (or should) not connect to it.  In that case USB gives
+you a working network connection.  It does however require a change
+of your Gadget's system configuration: you have to activate the _dwc2_
+overlay at boot time.
+
+Before you do this, you should know that loading _dwc2_ impacts USB
+handling.
+
+ - With _dwc2_ loaded, connecting devices to the Raspi's own USB
+   controller stops working.
+ - If you connect USB devices via another USB hub it may work or
+   not.
+ - If _dwc2_ is loaded and USB networking (by loading *g_ether* or
+   *libcomposite*) is activated, all local USB devices stop working
+   and are in fact connected to the computer hosting the Raspberry.
+
+To enable on-the-go network add the line `dtoverlay=dwc2` in an
+`[all]` section
+
+    [all]
+    dtoverlay=dwc2
+
+in the file _/boot/config.txt_ (if _dwc2_ isn't already there) and
+reboot the Raspberry.  You can also download the script
+[_switch-dwc2_][3], which lets you enable and disable the overlay
+from the command line.
+
+In addition to the _dwc2_ overlay the kernel module *libcomposite*
+must be loaded to activate the network.  _otg-disk_ will do this if
+
+ 1. the USB network adapter's MAC address is set with the
+    `OTG_DEV_ADDR` option,
+ 2. the _dwc2_ overlay is activated,
+ 3. neither *g_ether* nor *g_multi* are already loaded, and
+ 4. only one device (the Raspberry's own USB hub) is found on the
+    USB.
+
+These conditions shall ensure that OTG does not interfere with a
+connected USB device, which you want to access.  Additionally the
+required configuration option
+
+    # MAC address in case g_ether is loaded here.
+    OTG_DEV_ADDR="aa:bb:cc:dd:ee:f1"
+
+makes the Raspi always pick the same IP address, which makes life
+somewhat easier.
+
+For Raspbian Bookwork the method of network configuration changed to
+*NetworkManager*.  Using that takes comparable long (and comes in
+addition to the "slow" boot time) to go through DHCP and local-link
+(aka zeroconf).  Therefore it is recommended to configure a fixexd
+IP-number, which is used when set:
+
+    # Use this fixed IP address instead of nmcli zeroconf or other.
+    OTG_IP_ADDR="169.254.233.90"
+
+No network mask is expected or supported (which is 255.255.0.0 for
+zeroconf).  If the network does not come up check the network settings
+of your host.  You might have to activate zeroconf/locallink here too.
+
+The network still fails you can access the Raspberry on the USB's
+serial interface.  If your host is Linux the command would be
+
+    minicom -D /dev/ttyACM0
+
+Notice also that you need special OTG cables or adapters to connect
+the Raspi to a capable host.  Not all cables will work.  Usually a
+smartphone cable that can be used to exchange data with a computer
+should do.
+
+
+### Running otg-disk  { #systemd-service }
+
+When you have followed the introduction you have started _otg-disk_
+already several times from the command line.
+
+    $ ./otg-disk --start
+
+This is ideal for ad-hoc services or when you want to debug things
+because log messages go to the console when the script is started
+from a terminal.  Pressing `Ctrl+C` stops the script.
+
+You may want to run _otg-disk_ as a system service and this is easy
+to do.  However you should check if (and where) the script writes
+its logfiles:
+
+    # Logs are stored here.
+    LOGDIR="$PUBLIC_SHARE_PATH/logs"
+
+If `LOGDIR` is set _otg-disk_'s log messages are written to this
+directory, one file per invocation.  Logfiles accumulate in the
+directory and you should remove old files from time to time.  If you
+unset the `LOGDIR` option log messages go to the system's log file
+(usually _/var/log/messages_).
+
+To install _otg-disk_ as a system service you need to run only
+
+    $ sudo ./otg-disk --install
+
+This creates a _systemd_ unit file in _/etc/systemd/system_ and
+registers it but the service is not immediately started.  Run
+
+    $ sudo systemctl start otg-disk.service
+
+for that (or reboot).
+
+After that
+
+ - _otg-disk_ will be started on every boot,
+ - starting the file server and all other services, which are
+   configured to automatically start (`START_SERVICES` option).
+
+If you want to debug the / edit the script stop the system service
+first and run _otg-disk_ manually:
+
+    $ sudo systemctl stop otg-disk.service
+    $ ./otg-disk --start
+
+Uninstalling the _otg-disk_ as simple as installing:
+
+    $ sudo ./otg-disk --uninstall
+
+stops the service, removes the unit files and reloads _systemd_'s
+configuration.
+
+
+There's also an alternative installation option.  If you use
+
+    $ sudo ./otg-disk --install-otg
+
+(instead of the `--install` from above) then the script checks first
+if _usb0_ is up and continues to start only if that's the case.
+
+
+### Accessing the server
+
+The configuration enables two server components on the Raspberry: a
+_samba_ and (if activated) a DLNA server.  (The HTTP server needs
+some more work, which is done in [the next document][4]).  The _samba_
+server provides a simple way to exchange files between clients.  Today's
+popular operating systems (iOS, Linux, Windows, UNIX) have built-in
+support for the protocol.  Even some mobile phones have it
+out-of-the-box and smb/cifs compatible software is available in the app
+stores.
+
+The DLNA server streams media files to clients.  Again, support
+comes with the major operating system and mobiles phones but smart TVs
+are possible options.  Finally, there's the local W-Lan hotspot.  It
+allows some flexibility with the "where" because it enables the
+Raspberry to create its network infrastructure for the running services.
+
+
+
+
+ [1]: reference.md (otg-disk reference)
+ [2]: https://magpi.raspberrypi.com/articles/pi-zero-w-smart-usb-flash-drive (
+  "Make a Pi Zero W Smart USB flash drive")
+ [3]: switch-dwc2 (switch-dc2)
+ [4]: http-interface.md (HTTP Interface)
+
+
+-->
+</HTML>
