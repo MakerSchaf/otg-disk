@@ -1,7 +1,13 @@
 
+2023-12-21
+
+ - Deactivated the USB serial interface because it break (in this
+   configuration) USSB ethernet.
+
+
 2023-12-06
 
- - Replace *g_ether* with *libcomposite*. 
+ - Replaced *g_ether* with *libcomposite*. 
 
 
 2023-11-28

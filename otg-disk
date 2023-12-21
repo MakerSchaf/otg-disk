@@ -1345,8 +1345,8 @@ activate_gadget() {
 	# Add functions here
 
 	# Serial interface
-	mkdir -p functions/acm.usb0
-	ln -s functions/acm.usb0 configs/c.1/
+	#mkdir -p functions/acm.usb0
+	#ln -s functions/acm.usb0 configs/c.1/
 
 	# Network interface
 	mkdir -p functions/ecm.usb0
